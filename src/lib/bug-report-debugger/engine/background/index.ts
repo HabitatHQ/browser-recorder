@@ -30,7 +30,8 @@ export interface DebuggerBridge {
 type RawEventsCallback = (tabId: number, events: unknown[]) => void;
 
 export function registerDebuggerBackgroundListeners(
-  onRawEvents?: RawEventsCallback
+  onRawEvents?: RawEventsCallback,
+  shouldPreserveTab?: (tabId: number) => boolean,
 ): DebuggerBridge {
   const scope = globalThis as typeof globalThis & { [BACKGROUND_LISTENER_FLAG]?: boolean };
   if (scope[BACKGROUND_LISTENER_FLAG]) {
@@ -108,6 +109,9 @@ export function registerDebuggerBackgroundListeners(
   });
 
   chrome.tabs.onRemoved.addListener((tabId) => {
+    // Skip automatic discard when background.ts is handling this tab's session
+    // (e.g. opening the recorder after the session tab closes unexpectedly).
+    if (shouldPreserveTab?.(tabId)) return;
     store
       .discardSessionByTabId(tabId)
       .catch((err: unknown) =>
