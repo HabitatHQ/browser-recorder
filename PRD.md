@@ -199,7 +199,6 @@ Implementation: Canvas 2D API, no third-party library.
 - **Notes** — free-form scratchpad, distinct from description. Intended for
   reproduction steps, hypotheses, or anything the user wants to append mid-session
   without committing to the final description. Saved to `notes.md` in the ZIP.
-- **Priority** — Low / Medium / High / Critical
 
 Shown alongside a live summary of captured debug data:
 
@@ -245,7 +244,6 @@ Splitting debugger output into three discrete files (rather than a single
 {
   "title": "string",
   "description": "string | null",
-  "priority": "low | medium | high | critical",
   "url": "string | null",
   "pageTitle": "string | null",
   "timestamp": "ISO 8601",

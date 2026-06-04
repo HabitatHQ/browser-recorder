@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { ArrowUpRight, Check, Eraser, Square, Trash2, Undo2, X } from "lucide-react";
+import { ArrowUpRight, Check, EyeOff, Square, Trash2, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type ToolType = "arrow" | "rect" | "blur";
@@ -36,6 +36,8 @@ const COLORS = [
   { value: "#eab308", label: "Yellow" },
   { value: "#000000", label: "Black" },
 ];
+
+const TOOLBAR_WIDTH = 56;
 
 function drawArrow(ctx: CanvasRenderingContext2D, start: Point, end: Point, color: string): void {
   const dx = end.x - start.x;
@@ -135,6 +137,7 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
   const [layers, setLayers] = useState<Layer[]>([]);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+  const [cancelPending, setCancelPending] = useState(false);
 
   const dragging = useRef(false);
   const dragStart = useRef<Point>({ x: 0, y: 0 });
@@ -317,7 +320,7 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
 
   const displaySize = imgSize
     ? (() => {
-        const maxW = window.innerWidth - 56;
+        const maxW = window.innerWidth - TOOLBAR_WIDTH - 8;
         const maxH = window.innerHeight - 16;
         const ratio = Math.min(maxW / imgSize.w, maxH / imgSize.h, 1);
         return { w: Math.floor(imgSize.w * ratio), h: Math.floor(imgSize.h * ratio) };
@@ -359,15 +362,18 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
         </div>
       </div>
 
-      <div className="flex w-10 flex-col items-center gap-1 bg-background py-2">
-        <ToolBtn active={tool === "arrow"} onClick={() => setTool("arrow")} title="Arrow">
+      <div
+        className="flex flex-col items-center gap-1 bg-background py-2"
+        style={{ width: TOOLBAR_WIDTH }}
+      >
+        <ToolBtn active={tool === "arrow"} onClick={() => setTool("arrow")} title="Arrow" label="Arrow">
           <ArrowUpRight className="h-4 w-4" />
         </ToolBtn>
-        <ToolBtn active={tool === "rect"} onClick={() => setTool("rect")} title="Rectangle">
+        <ToolBtn active={tool === "rect"} onClick={() => setTool("rect")} title="Rect" label="Rect">
           <Square className="h-4 w-4" />
         </ToolBtn>
-        <ToolBtn active={tool === "blur"} onClick={() => setTool("blur")} title="Blur/Redact">
-          <Eraser className="h-4 w-4" />
+        <ToolBtn active={tool === "blur"} onClick={() => setTool("blur")} title="Redact" label="Redact">
+          <EyeOff className="h-4 w-4" />
         </ToolBtn>
 
         <div className="my-1 w-full border-t border-border" />
@@ -388,10 +394,10 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
 
         <div className="my-1 w-full border-t border-border" />
 
-        <ToolBtn onClick={handleUndo} title="Undo">
+        <ToolBtn onClick={handleUndo} title="Undo" label="Undo">
           <Undo2 className="h-4 w-4" />
         </ToolBtn>
-        <ToolBtn onClick={handleClear} title="Clear all">
+        <ToolBtn onClick={handleClear} title="Clear all" label="Clear">
           <Trash2 className="h-4 w-4" />
         </ToolBtn>
 
@@ -400,14 +406,38 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
         <button
           type="button"
           title="Done"
-          className="flex h-8 w-8 items-center justify-center rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors"
+          className="flex w-full flex-col items-center gap-0.5 rounded-md bg-green-600 py-1 text-white hover:bg-green-700 transition-colors"
           onClick={handleDone}
         >
           <Check className="h-4 w-4" />
+          <span className="text-[9px] leading-none">Done</span>
         </button>
-        <ToolBtn onClick={onCancel} title="Cancel">
-          <X className="h-4 w-4" />
-        </ToolBtn>
+
+        {cancelPending ? (
+          <div className="flex w-full flex-col items-center gap-1 px-1 pt-1">
+            <span className="text-[9px] text-muted-foreground text-center leading-tight">
+              Discard?
+            </span>
+            <button
+              type="button"
+              className="w-full rounded bg-destructive py-0.5 text-[10px] text-destructive-foreground hover:bg-destructive/90 transition-colors"
+              onClick={onCancel}
+            >
+              Yes
+            </button>
+            <button
+              type="button"
+              className="w-full rounded py-0.5 text-[10px] hover:bg-muted transition-colors"
+              onClick={() => setCancelPending(false)}
+            >
+              No
+            </button>
+          </div>
+        ) : (
+          <ToolBtn onClick={() => setCancelPending(true)} title="Cancel" label="Cancel">
+            <X className="h-4 w-4" />
+          </ToolBtn>
+        )}
       </div>
     </div>
   );
@@ -417,11 +447,13 @@ function ToolBtn({
   active,
   onClick,
   title,
+  label,
   children,
 }: {
   active?: boolean;
   onClick: () => void;
   title: string;
+  label?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -430,11 +462,12 @@ function ToolBtn({
       title={title}
       onClick={onClick}
       className={cn(
-        "flex h-8 w-8 items-center justify-center rounded-md transition-colors",
+        "flex w-full flex-col items-center gap-0.5 rounded-md py-1 transition-colors",
         active ? "bg-primary text-primary-foreground" : "hover:bg-muted text-foreground"
       )}
     >
       {children}
+      {label && <span className="text-[9px] leading-none">{label}</span>}
     </button>
   );
 }
