@@ -340,7 +340,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <div className="flex flex-col items-center gap-4 text-center max-w-sm">
-          <CheckCircle2 className="h-12 w-12 text-green-500" />
+          <CheckCircle2 className="h-12 w-12 text-green-500 dark:text-green-400" />
           <div>
             <p className="font-semibold text-lg">Report exported</p>
             {exportFilename && (

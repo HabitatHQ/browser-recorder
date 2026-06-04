@@ -412,7 +412,7 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
         <button
           type="button"
           title="Done"
-          className="flex w-full flex-col items-center gap-0.5 rounded-md bg-green-600 py-1 text-white hover:bg-green-700 transition-colors"
+          className="flex w-full flex-col items-center gap-0.5 rounded-md bg-green-600 py-1 text-white hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 transition-colors"
           onClick={handleDone}
         >
           <Check className="h-4 w-4" />

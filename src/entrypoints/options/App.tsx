@@ -428,7 +428,7 @@ export default function App() {
           {isDirty && !saved && (
             <span className="text-sm text-muted-foreground">Unsaved changes</span>
           )}
-          {saved && <span className="text-sm text-green-600">Saved</span>}
+          {saved && <span className="text-sm text-green-600 dark:text-green-400">Saved</span>}
           {error && <span className="text-sm text-destructive">{error}</span>}
           <Button onClick={save}>Save settings</Button>
         </div>
