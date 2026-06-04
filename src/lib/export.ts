@@ -1,6 +1,32 @@
 import type { ScreenshotEntry, Session, SessionCounts, SubmitFormValues } from "@/lib/types";
 import { Zip, ZipPassThrough } from "fflate";
 
+const README = `\
+# Bug report — chrome-recorder
+
+Captured with [chrome-recorder](https://github.com/npalladium/chrome-recorder).
+
+## Files
+
+| File | Contents |
+|---|---|
+| metadata.json | Session info: URL, duration, browser, OS, viewport, device pixel ratio, color scheme, network type, installed extensions, active service workers |
+| console.json | Console events (log / info / warn / error / debug) captured during the session. Entries prefixed \`[uncaught]\` are unhandled JS exceptions; \`[unhandled rejection]\` are unhandled promise rejections. |
+| network.json | XHR and fetch requests: URL, method, status, headers, body (truncated at 10 kB), timing |
+| interactions.json | User interactions: clicks, inputs, navigations, scrolls with CSS selector paths |
+| dom-snapshot-start.html | Page HTML captured at session start. Open in a browser — relative URLs resolve via \`<base href>\`. Cross-origin stylesheets are not inlined (CORS). |
+| dom-snapshot-N.html | On-demand DOM snapshots taken during the session |
+| screenshot-N.png | Screenshots taken during the session (annotations rasterised in) |
+| video.webm | Tab recording (if enabled) |
+| notes.md | Free-form notes entered before export |
+
+## Notes
+
+- **Browser-native console entries** (e.g. \`ERR_BLOCKED_BY_CLIENT\`, preload warnings) are not present in console.json — they are injected into DevTools directly by Chrome and do not go through the JS \`console\` API.
+- Console and network capture only covers events that occurred **after the session was started**.
+- Sensitive headers (\`Authorization\`, \`Cookie\`) are redacted to \`[REDACTED]\` by default.
+`;
+
 export interface ExportInput {
   session: Session | null;
   counts: SessionCounts;
@@ -137,6 +163,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
 
     const work: Array<() => Promise<void>> = [];
 
+    addText(zip, "README.md", README);
     addText(zip, "metadata.json", JSON.stringify(metadata, null, 2));
 
     if (debuggerEvents.console.length > 0) {
