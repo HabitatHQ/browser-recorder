@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils";
 import { GET_SESSION_SNAPSHOT_MESSAGE } from "@/vendor/capture-core/debugger/constants";
 import type {
   DebuggerActionEvent,
+  DebuggerConsoleEvent,
+  DebuggerNetworkEvent,
   DebuggerSessionSnapshot,
 } from "@/vendor/capture-core/debugger/types";
 import {
@@ -29,6 +31,7 @@ import {
   MousePointer,
   Network,
   RotateCcw,
+  Trash2,
   Video,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -117,7 +120,6 @@ export default function App() {
     screenshots: 0,
     errors: 0,
   });
-  // Fix 8: single array instead of parallel screenshotDataUrls + screenshotBlobs
   const [screenshots, setScreenshots] = useState<ScreenshotEntry[]>([]);
   const [annotatingIndex, setAnnotatingIndex] = useState<number | null>(null);
   const [domSnapshots, setDomSnapshots] = useState<Record<string, string>>({});
@@ -156,7 +158,6 @@ export default function App() {
         }
 
         if (mode === "screenshot") {
-          // Standalone screenshot — load from session storage (not OPFS)
           const ssResult = (await chrome.storage.session.get("screenshots")) as {
             screenshots?: string[];
           };
@@ -171,7 +172,6 @@ export default function App() {
           return;
         }
 
-        // Session mode — load screenshots and DOM snapshots from OPFS
         const dir = await navigator.storage.getDirectory();
 
         const [loadedScreenshots, loadedSnaps] = await Promise.all([
@@ -259,6 +259,10 @@ export default function App() {
     setState("annotating");
   }
 
+  function handleDeleteScreenshot(index: number) {
+    setScreenshots((prev) => prev.filter((_, i) => i !== index));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setState("submitting");
@@ -340,7 +344,7 @@ export default function App() {
           <div>
             <p className="font-semibold text-lg">Report exported</p>
             {exportFilename && (
-              <p className="text-sm text-muted-foreground mt-1">{exportFilename}</p>
+              <p className="text-sm font-medium mt-1">{exportFilename}</p>
             )}
           </div>
           <div className="flex gap-2">
@@ -362,11 +366,12 @@ export default function App() {
   }
 
   const isSubmitting = state === "submitting";
+  const domSnapshotKeys = Object.keys(domSnapshots);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="text-xl font-semibold mb-6">Export debug report</h1>
+        <h1 className="text-xl font-semibold mb-6">Review &amp; export bug report</h1>
 
         <form onSubmit={handleSubmit}>
           <div className="grid gap-6 md:grid-cols-2">
@@ -386,6 +391,34 @@ export default function App() {
                   ) : undefined
                 }
                 items={debuggerEvents.console}
+                renderItem={(item, i) => {
+                  const ev = item as DebuggerConsoleEvent;
+                  const relSec = session
+                    ? ((ev.timestamp - session.startedAt) / 1000).toFixed(1)
+                    : null;
+                  return (
+                    <div key={i} className="flex items-start gap-2 py-0.5 text-xs">
+                      <span
+                        className={cn(
+                          "shrink-0 rounded px-1 font-mono uppercase text-[10px] leading-5",
+                          ev.level === "error"
+                            ? "bg-destructive/20 text-destructive"
+                            : ev.level === "warn"
+                              ? "bg-yellow-500/20 text-yellow-700"
+                              : "bg-muted-foreground/15 text-muted-foreground"
+                        )}
+                      >
+                        {ev.level}
+                      </span>
+                      <span className="flex-1 truncate text-foreground">{ev.message}</span>
+                      {relSec && (
+                        <span className="shrink-0 text-muted-foreground/60 w-10 text-right">
+                          {relSec}s
+                        </span>
+                      )}
+                    </div>
+                  );
+                }}
               />
               <Separator />
               <SummaryRow
@@ -393,6 +426,33 @@ export default function App() {
                 label="Network"
                 count={counts.network}
                 items={debuggerEvents.network}
+                renderItem={(item, i) => {
+                  const ev = item as DebuggerNetworkEvent;
+                  const relSec = session
+                    ? ((ev.timestamp - session.startedAt) / 1000).toFixed(1)
+                    : null;
+                  return (
+                    <div key={i} className="flex items-center gap-2 py-0.5 text-xs font-mono">
+                      <span
+                        className={cn(
+                          "shrink-0 rounded px-1 text-[10px] leading-5",
+                          ev.status !== undefined && ev.status >= 400
+                            ? "bg-destructive/20 text-destructive"
+                            : "bg-muted-foreground/15 text-muted-foreground"
+                        )}
+                      >
+                        {ev.status ?? "—"}
+                      </span>
+                      <span className="shrink-0 text-muted-foreground">{ev.method}</span>
+                      <span className="flex-1 truncate text-foreground">{ev.url}</span>
+                      {relSec && (
+                        <span className="shrink-0 text-muted-foreground/60 w-10 text-right">
+                          {relSec}s
+                        </span>
+                      )}
+                    </div>
+                  );
+                }}
               />
               <Separator />
               <SummaryRow
@@ -454,6 +514,12 @@ export default function App() {
                 icon={<FileCode className="h-4 w-4 text-muted-foreground" />}
                 label="DOM snapshots"
                 count={counts.domSnapshots}
+                items={domSnapshotKeys.length > 0 ? domSnapshotKeys : undefined}
+                renderItem={(item, i) => (
+                  <div key={i} className="py-0.5 text-xs font-mono text-muted-foreground">
+                    dom-snapshot-{String(item)}.html
+                  </div>
+                )}
               />
 
               {screenshots.length > 0 && (
@@ -465,11 +531,16 @@ export default function App() {
                       <span className="flex-1 text-muted-foreground">Screenshots</span>
                       <span className="font-medium tabular-nums">{screenshots.length}</span>
                     </div>
-                    <div className="mt-1 flex flex-col gap-0.5 pl-6">
+                    <div className="mt-1.5 flex flex-col gap-1.5 pl-6">
                       {screenshots.map((entry, i) => (
                         // biome-ignore lint/suspicious/noArrayIndexKey: screenshots have no stable ID
-                        <div key={i} className="flex items-center gap-2 text-xs py-0.5">
-                          <span className="flex-1 text-muted-foreground">#{i + 1}</span>
+                        <div key={i} className="flex items-center gap-2">
+                          <img
+                            src={entry.dataUrl}
+                            alt={`Screenshot ${i + 1}`}
+                            className="h-10 w-auto shrink-0 rounded border border-border object-contain"
+                          />
+                          <span className="flex-1 text-xs text-muted-foreground">#{i + 1}</span>
                           {entry.annotatedBlob && (
                             <Badge variant="secondary" className="text-[10px] px-1 py-0">
                               annotated
@@ -477,10 +548,18 @@ export default function App() {
                           )}
                           <button
                             type="button"
-                            className="text-primary hover:underline"
+                            className="text-xs text-primary hover:underline"
                             onClick={() => openAnnotation(i)}
                           >
                             Annotate
+                          </button>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-destructive transition-colors"
+                            onClick={() => handleDeleteScreenshot(i)}
+                            aria-label={`Delete screenshot ${i + 1}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       ))}
@@ -501,7 +580,7 @@ export default function App() {
                       disabled={videoDownloading}
                       onClick={handleVideoDownload}
                     >
-                      {videoDownloading ? "…" : "Download"}
+                      {videoDownloading ? "Downloading…" : "Download"}
                     </button>
                   </div>
                 </>
@@ -525,17 +604,23 @@ export default function App() {
                 <Textarea
                   id="description"
                   rows={3}
+                  placeholder="What broke? When does it happen?"
                   value={formValues.description}
                   onChange={(e) => setFormValues((v) => ({ ...v, description: e.target.value }))}
                 />
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="notes">Notes</Label>
+                <Label htmlFor="notes">
+                  Notes
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    steps, hypotheses
+                  </span>
+                </Label>
                 <Textarea
                   id="notes"
                   rows={3}
-                  placeholder="Reproduction steps, hypotheses…"
+                  placeholder="1. Go to…&#10;2. Click…&#10;3. See error"
                   value={formValues.notes}
                   onChange={(e) => setFormValues((v) => ({ ...v, notes: e.target.value }))}
                 />

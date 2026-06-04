@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-// How long to flash the "Taken ✓" / "Snapshot taken" confirmation label
 const CONFIRM_FLASH_MS = 1500;
 
 function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
@@ -55,8 +54,13 @@ function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
         <Circle className="h-3 w-3 fill-current" />
         {starting ? "Starting…" : "Start session"}
       </Button>
+      <p className="text-center text-[10px] text-muted-foreground/60 -mt-2">⌥⇧R</p>
 
       <Separator />
+
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        For this session
+      </p>
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
@@ -106,10 +110,15 @@ function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
 
       <Separator />
 
-      <Button variant="outline" className="w-full" onClick={takeScreenshot}>
-        <Camera className="h-4 w-4" />
-        Screenshot
-      </Button>
+      <div className="flex flex-col gap-1">
+        <Button variant="outline" className="w-full" onClick={takeScreenshot}>
+          <Camera className="h-4 w-4" />
+          Screenshot
+        </Button>
+        <p className="text-center text-[10px] text-muted-foreground/60">
+          No debug data — annotation only · ⌥⇧C
+        </p>
+      </div>
 
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
@@ -121,6 +130,7 @@ function ActiveView() {
   const elapsed = useElapsedMs(session?.startedAt ?? null);
   const [snapshotConfirm, setSnapshotConfirm] = useState(false);
   const [screenshotConfirm, setScreenshotConfirm] = useState(false);
+  const [discardPending, setDiscardPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const wrap = async (fn: () => Promise<unknown>) => {
@@ -152,9 +162,8 @@ function ActiveView() {
       setTimeout(() => setSnapshotConfirm(false), CONFIRM_FLASH_MS);
     });
 
-  const discardSession = () =>
+  const confirmDiscard = () =>
     wrap(async () => {
-      if (!window.confirm("Discard this session and all captured data?")) return;
       await sendToBackground({ type: "discard-session" });
       window.close();
     });
@@ -173,24 +182,34 @@ function ActiveView() {
     );
   }
 
+  const statusParts = [
+    `${counts.console} console`,
+    `${counts.network} network`,
+    counts.interactions > 0 ? `${counts.interactions} int` : null,
+    counts.domSnapshots > 0 ? `${counts.domSnapshots} dom` : null,
+    counts.screenshots > 0 ? `${counts.screenshots} ss` : null,
+  ].filter(Boolean);
+
   return (
     <div className="flex flex-col gap-3 p-4">
-      <div className="flex items-center gap-2 text-sm">
-        <Circle className="h-2.5 w-2.5 fill-destructive text-destructive" />
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
+        <Circle className="h-2.5 w-2.5 fill-destructive text-destructive shrink-0" />
         <span className="font-medium">{isStopping ? "Stopping…" : "Recording"}</span>
         <span className="text-muted-foreground">{formatDuration(elapsed)}</span>
-        <span className="mx-1 text-border">│</span>
-        <span className="text-muted-foreground">
-          {counts.console} console · {counts.network} net
-          {counts.screenshots > 0 && ` · ${counts.screenshots} ss`}
-        </span>
-        {counts.errors > 0 && <span className="text-destructive">· {counts.errors} errors</span>}
+        <span className="text-border">│</span>
+        <span className="text-muted-foreground">{statusParts.join(" · ")}</span>
+        {counts.errors > 0 && (
+          <span className="text-destructive">· {counts.errors} errors</span>
+        )}
       </div>
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
 
       <Button className="w-full" onClick={stopSession} disabled={isStopping}>
         <Square className="h-3 w-3 fill-current" />
         Stop &amp; report
       </Button>
+      <p className="text-center text-[10px] text-muted-foreground/60 -mt-2">⌥⇧S</p>
 
       <div className="flex gap-2">
         <Button
@@ -200,7 +219,7 @@ function ActiveView() {
           disabled={screenshotConfirm || isStopping}
         >
           <Camera className="h-4 w-4" />
-          {screenshotConfirm ? "Taken ✓" : "Screenshot"}
+          {screenshotConfirm ? "Screenshot ✓" : "Screenshot"}
         </Button>
         <Button
           variant="outline"
@@ -209,21 +228,42 @@ function ActiveView() {
           disabled={snapshotConfirm || isStopping}
         >
           <FileCode className="h-4 w-4" />
-          {snapshotConfirm ? "Snapshot taken" : "Snapshot DOM"}
+          {snapshotConfirm ? "Snapshot ✓" : "Snapshot DOM"}
         </Button>
       </div>
 
-      <Button
-        variant="ghost"
-        size="sm"
-        className="w-full text-destructive hover:text-destructive"
-        onClick={discardSession}
-        disabled={isStopping}
-      >
-        × Discard session
-      </Button>
-
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {discardPending ? (
+        <div className="flex items-center justify-center gap-2 py-0.5">
+          <span className="text-xs text-muted-foreground">Discard all captured data?</span>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={confirmDiscard}
+            disabled={isStopping}
+          >
+            Discard
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 px-2 text-xs"
+            onClick={() => setDiscardPending(false)}
+          >
+            Keep
+          </Button>
+        </div>
+      ) : (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full text-destructive hover:text-destructive"
+          onClick={() => setDiscardPending(true)}
+          disabled={isStopping}
+        >
+          × Discard session
+        </Button>
+      )}
     </div>
   );
 }
