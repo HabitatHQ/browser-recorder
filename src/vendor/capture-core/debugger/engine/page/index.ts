@@ -6,6 +6,7 @@ import { createEventQueue } from "./event-queue";
 import { installNetworkCapture } from "./network";
 import { createStringifyValue } from "./serializer";
 import type { ConsoleLevel } from "./types";
+import { installUncaughtExceptionCapture } from "./uncaught";
 import { createNonFatalReporter, truncate } from "./utils";
 
 interface PageRuntimeConfig {
@@ -88,6 +89,11 @@ export function installDebuggerPageRuntime(config: PageRuntimeConfig = {}): void
   });
 
   installConsoleCapture({
+    reporter,
+    postConsole,
+  });
+
+  installUncaughtExceptionCapture({
     reporter,
     postConsole,
   });
