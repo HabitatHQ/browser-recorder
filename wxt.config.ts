@@ -36,6 +36,7 @@ export default defineConfig({
     },
     permissions: [
       "activeTab",
+      "management",
       "scripting",
       "storage",
       "tabs",

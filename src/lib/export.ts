@@ -49,8 +49,19 @@ async function addBlob(zip: Zip, name: string, blob: Blob): Promise<void> {
   f.push(new Uint8Array(buf), true);
 }
 
-export function exportReportAsZip(input: ExportInput): Promise<string> {
+export async function exportReportAsZip(input: ExportInput): Promise<string> {
   const { session, formValues, screenshots, domSnapshots, debuggerEvents } = input;
+
+  let extensions: Array<{ name: string; version: string; enabled: boolean }> = [];
+  try {
+    const all = await chrome.management.getAll();
+    extensions = all
+      .filter((ext) => ext.type !== "theme" && ext.id !== chrome.runtime.id)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map(({ name, version, enabled }) => ({ name, version, enabled }));
+  } catch {
+    // management API unavailable
+  }
 
   const now = new Date();
   const filename = `report-${toFilenameTimestamp(now)}.zip`;
@@ -68,6 +79,7 @@ export function exportReportAsZip(input: ExportInput): Promise<string> {
       os: navigator.platform,
       viewport: { width: window.screen.width, height: window.screen.height },
     },
+    extensions,
   };
 
   return new Promise((resolve, reject) => {

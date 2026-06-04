@@ -260,7 +260,10 @@ Splitting debugger output into three discrete files (rather than a single
     "browser": "string",
     "os": "string",
     "viewport": "string"
-  }
+  },
+  "extensions": [
+    { "name": "string", "version": "string", "enabled": "boolean" }
+  ]
 }
 ```
 
