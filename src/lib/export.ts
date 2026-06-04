@@ -63,6 +63,30 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
     // management API unavailable
   }
 
+  let serviceWorkers: Array<{ scope: string; scriptUrl: string; state: string }> = [];
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      serviceWorkers = regs.map((reg) => ({
+        scope: reg.scope,
+        scriptUrl:
+          reg.active?.scriptURL ??
+          reg.installing?.scriptURL ??
+          reg.waiting?.scriptURL ??
+          "",
+        state: reg.active
+          ? "active"
+          : reg.installing
+            ? "installing"
+            : reg.waiting
+              ? "waiting"
+              : "unknown",
+      }));
+    }
+  } catch {
+    // serviceWorker API unavailable
+  }
+
   const now = new Date();
   const filename = `report-${toFilenameTimestamp(now)}.zip`;
 
@@ -78,8 +102,16 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
       browser: navigator.userAgent,
       os: navigator.platform,
       viewport: { width: window.screen.width, height: window.screen.height },
+      devicePixelRatio: window.devicePixelRatio,
+      touch: navigator.maxTouchPoints > 0,
+      colorScheme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
+      reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      connectionEffectiveType:
+        (navigator as Navigator & { connection?: { effectiveType?: string } }).connection
+          ?.effectiveType ?? null,
     },
     extensions,
+    serviceWorkers,
   };
 
   return new Promise((resolve, reject) => {
