@@ -35,6 +35,7 @@ const VIDEO_STOP_GRACE_MS = 500;
 let debuggerBridge: DebuggerBridge;
 let bgSession: Session | null = null;
 let bgCounts: SessionCounts = emptyCounts();
+let recorderTabId: number | null = null;
 
 function emptyCounts(): SessionCounts {
   return { console: 0, network: 0, interactions: 0, domSnapshots: 0, screenshots: 0, errors: 0 };
@@ -181,6 +182,17 @@ export default defineBackground(async () => {
   });
 
   chrome.tabs.onRemoved.addListener(async (tabId) => {
+    if (tabId === recorderTabId) {
+      recorderTabId = null;
+      if (bgSession?.debuggerSessionId) {
+        await debuggerBridge.discardSession(bgSession.debuggerSessionId);
+      }
+      bgSession = null;
+      bgCounts = emptyCounts();
+      await setSession(null);
+      return;
+    }
+
     if (bgSession?.tabId !== tabId) return;
     // Session tab closed — treat the same as stop-session so data isn't lost.
     // shouldPreserveTab prevents the debugger bridge from discarding the session
@@ -190,9 +202,10 @@ export default defineBackground(async () => {
     bgSession.status = "stopping";
     await persistSession();
     chrome.action.setBadgeText({ text: "" });
-    await chrome.tabs.create({
+    const recorderTab = await chrome.tabs.create({
       url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
     });
+    recorderTabId = recorderTab.id ?? null;
   });
 });
 
@@ -272,13 +285,15 @@ async function handleMessage(message: BgMessage) {
       clearAutoCaptureTimers();
       if (bgSession.captureConfig.video) await stopVideoCapture();
       chrome.action.setBadgeText({ text: "" });
-      await chrome.tabs.create({
+      const recorderTab = await chrome.tabs.create({
         url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
       });
+      recorderTabId = recorderTab.id ?? null;
       return ok(undefined);
     }
 
     case "discard-session": {
+      recorderTabId = null;
       clearAutoCaptureTimers();
       if (bgSession?.captureConfig.video) await stopVideoCapture();
       if (bgSession?.debuggerSessionId) {

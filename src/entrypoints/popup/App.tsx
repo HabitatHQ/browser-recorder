@@ -254,7 +254,6 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
             size="sm"
             className="h-6 px-2 text-xs"
             onClick={confirmDiscard}
-            disabled={isStopping}
           >
             Discard
           </Button>
@@ -273,7 +272,6 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
           size="sm"
           className="w-full text-destructive hover:text-destructive"
           onClick={() => setDiscardPending(true)}
-          disabled={isStopping}
         >
           × Discard session
         </Button>
