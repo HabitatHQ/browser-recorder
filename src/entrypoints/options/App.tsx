@@ -12,6 +12,20 @@ import {
 } from "@/lib/types";
 import { useEffect, useState } from "react";
 
+function InfoTooltip({ text }: { text: string }) {
+  return (
+    <span className="group relative inline-flex items-center">
+      <span className="flex h-3.5 w-3.5 cursor-default select-none items-center justify-center rounded-full border border-muted-foreground/40 text-[9px] font-semibold text-muted-foreground">
+        ?
+      </span>
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 rounded-md bg-neutral-800 px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100">
+        {text}
+        <span className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-neutral-800" />
+      </span>
+    </span>
+  );
+}
+
 export default function App() {
   const [captureConfig, setCaptureConfig] = useState<CaptureConfig>(DEFAULT_CAPTURE_CONFIG);
   const [networkFilter, setNetworkFilter] = useState<NetworkFilterConfig>(DEFAULT_NETWORK_FILTER);
@@ -92,9 +106,12 @@ export default function App() {
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="opt-console" className="font-medium">
-                  Console logs
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-console" className="font-medium">
+                    Console logs
+                  </Label>
+                  <InfoTooltip text="Intercepts console.log, .warn, .error, .info, and .debug. Each entry is recorded with the log level, message text, and a timestamp relative to session start." />
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Capture console.log / warn / error / info
                 </p>
@@ -108,9 +125,12 @@ export default function App() {
 
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="opt-network" className="font-medium">
-                  Network requests
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-network" className="font-medium">
+                    Network requests
+                  </Label>
+                  <InfoTooltip text="Captures XHR and fetch calls including URL, method, HTTP status, headers, and bodies (truncated to 10 kB each). Configure which requests to capture and which to exclude in the Network filter section below." />
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   XHR and fetch calls (configurable below)
                 </p>
@@ -124,9 +144,12 @@ export default function App() {
 
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="opt-interactions" className="font-medium">
-                  User interactions
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-interactions" className="font-medium">
+                    User interactions
+                  </Label>
+                  <InfoTooltip text="Records clicks, text input, form changes, and navigations. Input values are stored as character counts only — raw text is never captured. Password fields are skipped entirely." />
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">Clicks, inputs, navigations</p>
               </div>
               <Switch
@@ -138,9 +161,12 @@ export default function App() {
 
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="opt-dom" className="font-medium">
-                  DOM snapshots
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-dom" className="font-medium">
+                    DOM snapshots
+                  </Label>
+                  <InfoTooltip text="Saves a full copy of the page HTML at session start and on demand. Relative URLs are resolved and same-origin stylesheets are inlined. Large SPAs can produce 5–10 MB per snapshot." />
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   HTML snapshot at session start + on demand
                 </p>
@@ -154,9 +180,12 @@ export default function App() {
 
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="opt-selector-path" className="font-medium">
-                  Full selector path
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-selector-path" className="font-medium">
+                    Full selector path
+                  </Label>
+                  <InfoTooltip text="When on, interaction targets are described as CSS paths like form > label > input. When off, only the clicked element itself is logged. The full path is more debuggable but more verbose." />
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Walk up the DOM to build a path like <code>form &gt; div &gt; button</code>.
                   Disable for just the element itself.
@@ -171,9 +200,12 @@ export default function App() {
 
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="opt-auto-screenshot" className="font-medium">
-                  Auto-screenshot on interaction
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-auto-screenshot" className="font-medium">
+                    Auto-screenshot on interaction
+                  </Label>
+                  <InfoTooltip text="Takes a screenshot 1.5 s after each click, input change, or navigation, debounced so rapid actions produce one screenshot. Can generate many screenshots on busy workflows — check the count in the recorder before exporting." />
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Take a screenshot 1.5 s after each click, change, or navigation. Debounced.
                 </p>
@@ -187,9 +219,12 @@ export default function App() {
 
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="opt-auto-dom" className="font-medium">
-                  Auto-DOM snapshot on interaction
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-auto-dom" className="font-medium">
+                    Auto-DOM snapshot on interaction
+                  </Label>
+                  <InfoTooltip text="Captures a DOM snapshot 1.5 s after each click, input change, or navigation. Each snapshot can be 5–10 MB on complex pages. Disable if your exports are unexpectedly large." />
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Capture a DOM snapshot 1.5 s after each click, change, or navigation. Debounced.
                 </p>
@@ -211,7 +246,10 @@ export default function App() {
 
           <div className="flex flex-col gap-4">
             <div>
-              <Label className="font-medium mb-2 block">Capture mode</Label>
+              <div className="flex items-center gap-1.5 mb-2">
+                <Label className="font-medium">Capture mode</Label>
+                <InfoTooltip text="XHR + fetch only captures API calls and is almost always sufficient. All resources also includes scripts, stylesheets, fonts, and images — useful for diagnosing resource loading failures but generates 10–100× more entries." />
+              </div>
               <div className="flex flex-col gap-2">
                 <label className="flex items-center gap-2 cursor-pointer text-sm">
                   <input
@@ -248,9 +286,12 @@ export default function App() {
             </div>
 
             <div>
-              <Label htmlFor="exclusion-patterns" className="font-medium mb-1 block">
-                URL exclusion patterns
-              </Label>
+              <div className="flex items-center gap-1.5 mb-1">
+                <Label htmlFor="exclusion-patterns" className="font-medium">
+                  URL exclusion patterns
+                </Label>
+                <InfoTooltip text="Glob patterns matched against the full request URL. Matching requests are silently dropped from the capture. Useful for filtering out analytics pings, health checks, or other noise. Supports * as a wildcard." />
+              </div>
               <Textarea
                 id="exclusion-patterns"
                 placeholder={"/analytics/*\n*/health\napi.example.com/track"}
@@ -269,9 +310,12 @@ export default function App() {
 
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="opt-req-bodies" className="font-medium">
-                  Request bodies
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-req-bodies" className="font-medium">
+                    Request bodies
+                  </Label>
+                  <InfoTooltip text="Captures the payload for POST, PUT, and PATCH requests. Truncated to 10 kB. May contain sensitive data — disable if the app sends credentials or PII in request bodies." />
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">Truncated at 10 kB</p>
               </div>
               <Switch
@@ -283,9 +327,12 @@ export default function App() {
 
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="opt-res-xhr" className="font-medium">
-                  XHR + fetch response bodies
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-res-xhr" className="font-medium">
+                    XHR + fetch response bodies
+                  </Label>
+                  <InfoTooltip text="Captures the response payload for XHR and fetch calls. Truncated to 10 kB. Useful for seeing what the server returned, but increases export size. Off by default." />
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">Truncated at 10 kB</p>
               </div>
               <Switch
@@ -297,9 +344,12 @@ export default function App() {
 
             <div className="flex items-center justify-between">
               <div>
-                <Label htmlFor="opt-res-other" className="font-medium">
-                  Other response bodies
-                </Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-res-other" className="font-medium">
+                    Other response bodies
+                  </Label>
+                  <InfoTooltip text="Captures response bodies for scripts, stylesheets, fonts, and images. Almost never needed and can make exports very large. Only enable this if you're diagnosing a specific resource loading issue." />
+                </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Scripts, stylesheets, images — high volume
                 </p>
@@ -321,9 +371,12 @@ export default function App() {
 
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
-              <Label htmlFor="opt-redact-auth" className="font-medium">
-                Redact Authorization header
-              </Label>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="opt-redact-auth" className="font-medium">
+                  Redact Authorization header
+                </Label>
+                <InfoTooltip text="Replaces the Authorization header value with [REDACTED] in captured network data. Keeps Bearer tokens, Basic credentials, and API keys out of exported reports. On by default." />
+              </div>
               <Switch
                 id="opt-redact-auth"
                 checked={networkFilter.redactAuthHeader}
@@ -332,9 +385,12 @@ export default function App() {
             </div>
 
             <div className="flex items-center justify-between">
-              <Label htmlFor="opt-redact-cookie" className="font-medium">
-                Redact Cookie header
-              </Label>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="opt-redact-cookie" className="font-medium">
+                  Redact Cookie header
+                </Label>
+                <InfoTooltip text="Replaces the Cookie header value with [REDACTED]. Session cookies and auth tokens are especially sensitive. On by default." />
+              </div>
               <Switch
                 id="opt-redact-cookie"
                 checked={networkFilter.redactCookieHeader}
@@ -343,9 +399,12 @@ export default function App() {
             </div>
 
             <div>
-              <Label htmlFor="custom-headers" className="font-medium mb-1 block">
-                Custom headers to redact
-              </Label>
+              <div className="flex items-center gap-1.5 mb-1">
+                <Label htmlFor="custom-headers" className="font-medium">
+                  Custom headers to redact
+                </Label>
+                <InfoTooltip text="Additional request headers to redact beyond Authorization and Cookie. Header names are case-insensitive. Common examples: X-Api-Key, X-Auth-Token, X-Session-Id." />
+              </div>
               <Textarea
                 id="custom-headers"
                 placeholder={"X-Api-Key\nX-Auth-Token"}
