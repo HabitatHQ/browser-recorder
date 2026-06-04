@@ -175,6 +175,26 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
     canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
   }, []);
 
+  // Initialize canvases once imgSize is known and the canvas elements are in the DOM.
+  // onImgLoad only sets imgSize; the canvases are rendered on the next React commit
+  // (when displaySize becomes non-null), so refs are valid by the time this effect runs.
+  useEffect(() => {
+    if (!imgSize) return;
+    const img = imgRef.current;
+    const backing = backingRef.current;
+    const overlay = overlayRef.current;
+    if (!img || !backing || !overlay) return;
+
+    backing.width = imgSize.w;
+    backing.height = imgSize.h;
+    overlay.width = imgSize.w;
+    overlay.height = imgSize.h;
+
+    const ctx = backing.getContext("2d") as CanvasRenderingContext2D;
+    ctx.drawImage(img, 0, 0);
+    setImgLoaded(true);
+  }, [imgSize]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: layers is a trigger dep; redrawBacking reads layersRef.current to avoid stale closure
   useEffect(() => {
     if (!imgLoaded) return;
@@ -300,22 +320,8 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
 
   function onImgLoad() {
     const img = imgRef.current;
-    const backing = backingRef.current;
-    const overlay = overlayRef.current;
-    if (!img || !backing || !overlay) return;
-
-    const w = img.naturalWidth;
-    const h = img.naturalHeight;
-    setImgSize({ w, h });
-
-    backing.width = w;
-    backing.height = h;
-    overlay.width = w;
-    overlay.height = h;
-
-    const ctx = backing.getContext("2d") as CanvasRenderingContext2D;
-    ctx.drawImage(img, 0, 0);
-    setImgLoaded(true);
+    if (!img) return;
+    setImgSize({ w: img.naturalWidth, h: img.naturalHeight });
   }
 
   const displaySize = imgSize
@@ -341,7 +347,7 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
             className="invisible absolute"
             onLoad={onImgLoad}
           />
-          {imgLoaded && displaySize && (
+          {displaySize && (
             <>
               <canvas
                 ref={backingRef}
