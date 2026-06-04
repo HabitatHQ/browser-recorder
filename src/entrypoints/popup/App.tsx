@@ -5,6 +5,7 @@ import { formatDuration, useElapsedMs, useSession } from "@/hooks/use-session";
 import { sendToBackground } from "@/lib/messaging";
 import { type CaptureConfig, DEFAULT_CAPTURE_CONFIG } from "@/lib/types";
 import {
+  AlertTriangle,
   Camera,
   Circle,
   Code,
@@ -125,7 +126,7 @@ function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
   );
 }
 
-function ActiveView() {
+function ActiveView({ currentTabId }: { currentTabId: number | null }) {
   const { session, counts, loading } = useSession();
   const elapsed = useElapsedMs(session?.startedAt ?? null);
   const [snapshotConfirm, setSnapshotConfirm] = useState(false);
@@ -172,6 +173,7 @@ function ActiveView() {
 
   const isStarting = session.status === "starting";
   const isStopping = session.status === "stopping";
+  const isDifferentTab = currentTabId != null && session.tabId !== currentTabId;
 
   if (isStarting) {
     return (
@@ -192,6 +194,18 @@ function ActiveView() {
 
   return (
     <div className="flex flex-col gap-3 p-4">
+      {isDifferentTab && (
+        <div className="flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-2 text-xs text-amber-700 dark:text-amber-400">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span>
+            Recording{" "}
+            <span className="font-medium">
+              {session.tabTitle ?? session.tabUrl ?? "another tab"}
+            </span>
+          </span>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
         <Circle className="h-2.5 w-2.5 fill-destructive text-destructive shrink-0" />
         <span className="font-medium">{isStopping ? "Stopping…" : "Recording"}</span>
@@ -272,12 +286,18 @@ export default function App() {
   const { session, loading } = useSession();
   const [initialConfig, setInitialConfig] = useState<CaptureConfig>(DEFAULT_CAPTURE_CONFIG);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [currentTabId, setCurrentTabId] = useState<number | null>(null);
 
   useEffect(() => {
     sendToBackground<{ captureConfig: CaptureConfig }>({ type: "get-settings" })
       .then(({ captureConfig }) => setInitialConfig(captureConfig))
       .catch(() => {})
       .finally(() => setSettingsLoaded(true));
+
+    chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then(([tab]) => { if (tab?.id != null) setCurrentTabId(tab.id); })
+      .catch(() => {});
   }, []);
 
   return (
@@ -296,7 +316,7 @@ export default function App() {
 
       {!loading &&
         settingsLoaded &&
-        (session ? <ActiveView /> : <IdleView initialConfig={initialConfig} />)}
+        (session ? <ActiveView currentTabId={currentTabId} /> : <IdleView initialConfig={initialConfig} />)}
     </div>
   );
 }

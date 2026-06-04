@@ -157,7 +157,7 @@ export default defineBackground(async () => {
         void captureAutoDomSnapshot(tabId);
       }, INTERACTION_CAPTURE_DEBOUNCE_MS);
     }
-  });
+  }, (tabId) => bgSession?.tabId === tabId);
 
   chrome.runtime.onMessage.addListener((message: BgMessage, _sender, sendResponse) => {
     if (isDebuggerRuntimeMessage(message)) return;
@@ -181,14 +181,18 @@ export default defineBackground(async () => {
   });
 
   chrome.tabs.onRemoved.addListener(async (tabId) => {
-    if (bgSession?.tabId === tabId) {
-      clearAutoCaptureTimers();
-      if (bgSession.captureConfig.video) await stopVideoCapture();
-      chrome.action.setBadgeText({ text: "" });
-      bgSession = null;
-      bgCounts = emptyCounts();
-      await setSession(null);
-    }
+    if (bgSession?.tabId !== tabId) return;
+    // Session tab closed — treat the same as stop-session so data isn't lost.
+    // shouldPreserveTab prevents the debugger bridge from discarding the session
+    // so the recorder can still read console/network/interaction events.
+    clearAutoCaptureTimers();
+    if (bgSession.captureConfig.video) await stopVideoCapture();
+    bgSession.status = "stopping";
+    await persistSession();
+    chrome.action.setBadgeText({ text: "" });
+    await chrome.tabs.create({
+      url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
+    });
   });
 });
 
