@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import { ArrowUpRight, Check, EyeOff, Square, Trash2, Undo2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 type ToolType = "arrow" | "rect" | "blur";
 
@@ -96,7 +96,8 @@ function drawBlur(
   const offscreen = document.createElement("canvas");
   offscreen.width = Math.max(1, Math.floor(w / scale));
   offscreen.height = Math.max(1, Math.floor(h / scale));
-  const offCtx = offscreen.getContext("2d") as CanvasRenderingContext2D;
+  const offCtx = offscreen.getContext("2d");
+  if (!offCtx) return;
   offCtx.imageSmoothingEnabled = false;
   offCtx.drawImage(imageCanvas, x, y, w, h, 0, 0, offscreen.width, offscreen.height);
 
@@ -161,7 +162,8 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
     const img = imgRef.current;
     const canvas = backingRef.current;
     if (!img || !canvas) return;
-    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0);
     for (const layer of layersRef.current) {
@@ -175,10 +177,9 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
     canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
   }, []);
 
-  // Initialize canvases once imgSize is known and the canvas elements are in the DOM.
-  // onImgLoad only sets imgSize; the canvases are rendered on the next React commit
-  // (when displaySize becomes non-null), so refs are valid by the time this effect runs.
-  useEffect(() => {
+  // useLayoutEffect fires synchronously after the DOM commit, guaranteeing that
+  // backingRef/overlayRef are non-null before we assign canvas dimensions.
+  useLayoutEffect(() => {
     if (!imgSize) return;
     const img = imgRef.current;
     const backing = backingRef.current;
@@ -190,7 +191,8 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
     overlay.width = imgSize.w;
     overlay.height = imgSize.h;
 
-    const ctx = backing.getContext("2d") as CanvasRenderingContext2D;
+    const ctx = backing.getContext("2d");
+    if (!ctx) return;
     ctx.drawImage(img, 0, 0);
     setImgLoaded(true);
   }, [imgSize]);
@@ -226,7 +228,8 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
     if (!overlay || !backing || !img) return;
 
     const pos = getPos(e);
-    const overlayCtx = overlay.getContext("2d") as CanvasRenderingContext2D;
+    const overlayCtx = overlay.getContext("2d");
+    if (!overlayCtx) return;
     overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
 
     const t = currentTool.current;
@@ -235,7 +238,8 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
     } else if (t === "rect") {
       drawRect(overlayCtx, dragStart.current, pos, currentColor.current);
     } else {
-      const backCtx = backing.getContext("2d") as CanvasRenderingContext2D;
+      const backCtx = backing.getContext("2d");
+      if (!backCtx) return;
       const tempCanvas = document.createElement("canvas");
       tempCanvas.width = backing.width;
       tempCanvas.height = backing.height;
@@ -282,7 +286,8 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
     const offscreen = document.createElement("canvas");
     offscreen.width = img.naturalWidth;
     offscreen.height = img.naturalHeight;
-    const ctx = offscreen.getContext("2d") as CanvasRenderingContext2D;
+    const ctx = offscreen.getContext("2d");
+    if (!ctx) return;
     ctx.drawImage(img, 0, 0);
 
     const scaleX = img.naturalWidth / (imgSize?.w ?? img.naturalWidth);
