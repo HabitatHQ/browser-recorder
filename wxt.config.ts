@@ -7,43 +7,53 @@ export default defineConfig({
   vite: () => ({
     plugins: [tailwindcss()],
   }),
-  manifest: {
-    name: "Chrome Recorder",
-    short_name: "Recorder",
-    description: "Capture console, network, interactions and DOM snapshots for bug reports",
-    version: "0.1.0",
-    action: {
-      default_title: "Chrome Recorder",
-      default_popup: "popup.html",
-    },
-    options_ui: {
-      page: "options.html",
-      open_in_tab: true,
-    },
-    commands: {
-      "start-session": {
-        description: "Start capture session",
-        suggested_key: { default: "Alt+Shift+R", mac: "Alt+Shift+R" },
+  manifest: ({ browser }) => {
+    const isFirefox = browser === "firefox";
+    return {
+      name: "Chrome Recorder",
+      short_name: "Recorder",
+      description: "Capture console, network, interactions and DOM snapshots for bug reports",
+      version: "0.1.0",
+      action: {
+        default_title: "Chrome Recorder",
+        default_popup: "popup.html",
       },
-      "stop-session": {
-        description: "Stop session and open report",
-        suggested_key: { default: "Alt+Shift+S", mac: "Alt+Shift+S" },
+      options_ui: {
+        page: "options.html",
+        open_in_tab: true,
       },
-      "take-screenshot": {
-        description: "Take screenshot (standalone or during session)",
-        suggested_key: { default: "Alt+Shift+C", mac: "Alt+Shift+C" },
+      commands: {
+        "start-session": {
+          description: "Start capture session",
+          suggested_key: { default: "Alt+Shift+R", mac: "Alt+Shift+R" },
+        },
+        "stop-session": {
+          description: "Stop session and open report",
+          suggested_key: { default: "Alt+Shift+S", mac: "Alt+Shift+S" },
+        },
+        "take-screenshot": {
+          description: "Take screenshot (standalone or during session)",
+          suggested_key: { default: "Alt+Shift+C", mac: "Alt+Shift+C" },
+        },
       },
-    },
-    permissions: [
-      "activeTab",
-      "management",
-      "scripting",
-      "storage",
-      "tabs",
-      "tabCapture",
-      "offscreen",
-    ],
-    host_permissions: ["<all_urls>"],
+      permissions: [
+        "activeTab",
+        "management",
+        "scripting",
+        "storage",
+        "tabs",
+        ...(!isFirefox ? (["tabCapture", "offscreen"] as const) : []),
+      ],
+      host_permissions: ["<all_urls>"],
+      ...(isFirefox && {
+        browser_specific_settings: {
+          gecko: {
+            id: "chrome-recorder@npalladium.dev",
+            strict_min_version: "128.0",
+          },
+        },
+      }),
+    };
   },
   manifestVersion: 3,
 })

@@ -45,17 +45,16 @@ function pad(n: number, len = 2): string {
 }
 
 function toFilenameTimestamp(d: Date): string {
-  return [
-    d.getFullYear(),
-    pad(d.getMonth() + 1),
-    pad(d.getDate()),
-    "T",
-    pad(d.getHours()),
-    "-",
-    pad(d.getMinutes()),
-    "-",
-    pad(d.getSeconds()),
-  ].join("");
+  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
+function slugify(text: string, maxLen = 40): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, maxLen)
+    .replace(/-+$/, "");
 }
 
 function encode(text: string): Uint8Array {
@@ -114,7 +113,14 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
   }
 
   const now = new Date();
-  const filename = `report-${toFilenameTimestamp(now)}.zip`;
+  const rawSlug =
+    formValues.title && formValues.title !== "Bug report"
+      ? formValues.title
+      : session?.tabUrl
+        ? (() => { try { return new URL(session.tabUrl).hostname; } catch { return ""; } })()
+        : "";
+  const slug = slugify(rawSlug);
+  const filename = `bug-report${slug ? `-${slug}` : ""}-${toFilenameTimestamp(now)}.zip`;
 
   const metadata = {
     title: formValues.title,
