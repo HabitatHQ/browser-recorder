@@ -58,4 +58,7 @@ export default defineConfig({
     };
   },
   manifestVersion: 3,
+  zip: {
+    excludeSources: ["scratch/**"],
+  },
 })
