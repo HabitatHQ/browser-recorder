@@ -1,5 +1,5 @@
 {
-  "name": "chrome-recorder",
+  "name": "browser-recorder",
   "version": "0.2.1",
   "private": true,
   "type": "module",
