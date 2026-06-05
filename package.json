@@ -10,6 +10,7 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "package": "wxt zip && wxt zip -b firefox",
     "check": "tsc --noEmit",
     "lint": "biome check src",
     "postinstall": "wxt prepare"
