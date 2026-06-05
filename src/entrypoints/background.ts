@@ -380,26 +380,30 @@ async function handleMessage(message: BgMessage) {
       // Respond immediately so the popup closes before capture — prevents popup
       // appearing in the screenshot.
       void (async () => {
-        await new Promise<void>((r) => setTimeout(r, SCREENSHOT_POPUP_DISMISS_MS));
-        const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
-        if (capturedSessionId && bgSession?.id === capturedSessionId) {
-          const index = bgSession.screenshotFilenames.length + 1;
-          const filename = screenshotOpfsFilename(bgSession.id, index);
-          const base64 = dataUrl.split(",")[1] ?? "";
-          await writeToOpfs(
-            filename,
-            Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
-          );
-          bgSession.screenshotFilenames.push(filename);
-          void persistSession();
-          bumpCount("screenshots");
-        } else {
-          // Standalone screenshot — temporary session storage, open recorder to annotate
-          await appendScreenshot(dataUrl);
-          await chrome.tabs.create({
-            url: chrome.runtime.getURL("/recorder.html?mode=screenshot"),
-            openerTabId: tabId,
-          });
+        try {
+          await new Promise<void>((r) => setTimeout(r, SCREENSHOT_POPUP_DISMISS_MS));
+          const dataUrl = await chrome.tabs.captureVisibleTab(windowId, { format: "png" });
+          if (capturedSessionId && bgSession?.id === capturedSessionId) {
+            const index = bgSession.screenshotFilenames.length + 1;
+            const filename = screenshotOpfsFilename(bgSession.id, index);
+            const base64 = dataUrl.split(",")[1] ?? "";
+            await writeToOpfs(
+              filename,
+              Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+            );
+            bgSession.screenshotFilenames.push(filename);
+            void persistSession();
+            bumpCount("screenshots");
+          } else {
+            // Standalone screenshot — temporary session storage, open recorder to annotate
+            await appendScreenshot(dataUrl);
+            await chrome.tabs.create({
+              url: chrome.runtime.getURL("/recorder.html?mode=screenshot"),
+              openerTabId: tabId,
+            });
+          }
+        } catch (err) {
+          reportNonFatalError("Screenshot capture failed", err);
         }
       })();
       return ok(undefined);

@@ -345,6 +345,10 @@ export default function App() {
       });
       setExportFilename(filename);
       if (modeRef.current === "ring") {
+        if (session?.videoOpfsFilename) {
+          const dir = await navigator.storage.getDirectory();
+          await dir.removeEntry(session.videoOpfsFilename).catch(() => {});
+        }
         await chrome.storage.session.remove("ringSnapshot");
       }
       setState("success");

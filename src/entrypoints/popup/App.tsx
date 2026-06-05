@@ -89,15 +89,18 @@ function RingSection() {
     <div className="flex flex-col gap-2">
       <Separator />
       <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Ring recording
+        Continuous capture
       </p>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm">
           <RefreshCw className="h-4 w-4 text-muted-foreground" />
-          Always-on buffer
+          Always on
         </div>
         <Switch id="ring-toggle" checked={active} onChange={toggle} disabled={toggling} />
       </div>
+      <p className="text-xs text-muted-foreground pl-6">
+        Buffers events in the background — export recent activity without starting a session.
+      </p>
 
       {active && status && (
         <div className="text-xs text-muted-foreground pl-6">
@@ -123,7 +126,7 @@ function RingSection() {
           onClick={exportRing}
           disabled={!hasEvents}
         >
-          Export ring
+          Export
         </Button>
       )}
 
@@ -347,7 +350,7 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
       )}
 
       {ringActive && (
-        <p className="text-xs text-muted-foreground/60">Ring: buffering in background</p>
+        <p className="text-xs text-muted-foreground/60">Continuous capture: buffering in background</p>
       )}
 
       {error && <p className="text-xs text-destructive">{error}</p>}

@@ -16,7 +16,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(
             className
           )}
         />
-        <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
+        <div className="absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4 peer-checked:bg-primary-foreground" />
       </div>
       {label && <span className="text-sm">{label}</span>}
     </label>
