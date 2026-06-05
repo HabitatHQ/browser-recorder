@@ -44,18 +44,20 @@ export function buildDebuggerSubmissionPayload(
       continue;
     }
 
-    payload.networkRequests.push({
-      method: event.method,
-      url: event.url,
-      status: event.status,
-      duration: event.duration,
-      requestHeaders: event.requestHeaders,
-      responseHeaders: event.responseHeaders,
-      requestBody: event.requestBody,
-      responseBody: event.responseBody,
-      timestamp,
-      offset,
-    });
+    if (event.kind === "network") {
+      payload.networkRequests.push({
+        method: event.method,
+        url: event.url,
+        status: event.status,
+        duration: event.duration,
+        requestHeaders: event.requestHeaders,
+        responseHeaders: event.responseHeaders,
+        requestBody: event.requestBody,
+        responseBody: event.responseBody,
+        timestamp,
+        offset,
+      });
+    }
   }
 
   return payload;

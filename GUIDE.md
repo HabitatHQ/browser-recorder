@@ -44,6 +44,8 @@ All channels are independently toggled in the **popup** or the **Options page** 
 |---|---|
 | Console | `console.log/warn/error/info/debug` calls in page JS |
 | Network | XHR and fetch requests/responses (body and headers configurable) |
+| WebSocket | `open`, `close`, `error` lifecycle + each `send` (↑) and `message` (↓), payload truncated to 4 kB |
+| SSE | `EventSource` `open`, `error`, and `message` events (including named event types) |
 | Interactions | Clicks, inputs, navigations — with CSS selectors and element metadata |
 | DOM snapshots | Serialised page HTML with inlined same-origin styles |
 | Screenshots | Manual captures with annotation canvas (arrow, rectangle, blur tools) |

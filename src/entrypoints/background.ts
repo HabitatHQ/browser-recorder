@@ -49,7 +49,7 @@ let bgCounts: SessionCounts = emptyCounts();
 let recorderTabId: number | null = null;
 
 function emptyCounts(): SessionCounts {
-  return { console: 0, network: 0, interactions: 0, domSnapshots: 0, screenshots: 0, errors: 0 };
+  return { console: 0, network: 0, interactions: 0, websocket: 0, sse: 0, domSnapshots: 0, screenshots: 0, errors: 0 };
 }
 
 // ─── Ring state ───────────────────────────────────────────────────────────────
@@ -152,10 +152,14 @@ export default defineBackground(async () => {
       let consoleN = 0;
       let networkN = 0;
       let interactionsN = 0;
+      let websocketN = 0;
+      let sseN = 0;
       let hasAutoTriggerAction = false;
       for (const e of events) {
         if (e.kind === "console") consoleN++;
         else if (e.kind === "network") networkN++;
+        else if (e.kind === "websocket") websocketN++;
+        else if (e.kind === "sse") sseN++;
         else if (e.kind === "action") {
           interactionsN++;
           if (
@@ -169,6 +173,8 @@ export default defineBackground(async () => {
       }
       if (consoleN > 0) bumpCount("console", consoleN);
       if (networkN > 0) bumpCount("network", networkN);
+      if (websocketN > 0) bumpCount("websocket", websocketN);
+      if (sseN > 0) bumpCount("sse", sseN);
       if (interactionsN > 0) bumpCount("interactions", interactionsN);
 
       if (hasAutoTriggerAction) {
@@ -194,7 +200,7 @@ export default defineBackground(async () => {
       for (const ev of events) {
         const timestamped = { timestamp: now, event: ev };
         if (ev.kind === "console") ringConsoleEvents.push(timestamped);
-        else if (ev.kind === "network") ringNetworkEvents.push(timestamped);
+        else if (ev.kind === "network" || ev.kind === "websocket" || ev.kind === "sse") ringNetworkEvents.push(timestamped);
         else if (ev.kind === "action") ringInteractionEvents.push(timestamped);
       }
     }
