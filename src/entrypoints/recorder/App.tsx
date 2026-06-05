@@ -350,7 +350,11 @@ export default function App() {
           <div className="flex gap-2">
             <Button
               variant="outline"
-              onClick={() => chrome.tabs.create({ url: "chrome://downloads" })}
+              onClick={() =>
+                chrome.tabs.create({
+                  url: import.meta.env.BROWSER === "firefox" ? "about:downloads" : "chrome://downloads",
+                })
+              }
             >
               <FolderOpen className="h-4 w-4" />
               Open Downloads
@@ -509,7 +513,7 @@ export default function App() {
               <Separator />
               <SummaryRow
                 icon={<FileCode className="h-4 w-4 text-muted-foreground" />}
-                label="DOM snapshots"
+                label="DOM snapshots (HTML)"
                 count={counts.domSnapshots}
                 items={domSnapshotKeys.length > 0 ? domSnapshotKeys : undefined}
                 renderItem={(item, i) => (
