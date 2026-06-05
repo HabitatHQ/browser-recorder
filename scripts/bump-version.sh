@@ -44,6 +44,13 @@ if [[ "$NEW_VERSION" == "$CURRENT" ]]; then
   exit 1
 fi
 
+# This project follows ZeroVer (0ver.org): major version stays at 0.
+MAJOR="$(node -p "'${NEW_VERSION}'.split('.')[0]")"
+if [[ "$MAJOR" != "0" ]]; then
+  echo "Error: this project follows ZeroVer — major version must stay at 0." >&2
+  exit 1
+fi
+
 echo "→ ${CURRENT} → ${NEW_VERSION}"
 
 # ── Guard: clean working tree ─────────────────────────────────────────────────
