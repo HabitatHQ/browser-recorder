@@ -36,6 +36,7 @@ done
 # ── Version ───────────────────────────────────────────────────────────────────
 
 VERSION="$(node -p "require('./package.json').version")"
+NAME="$(node -p "require('./package.json').name")"
 TAG="v${VERSION}"
 
 echo "→ version: ${VERSION}  tag: ${TAG}"
@@ -45,8 +46,8 @@ echo "→ version: ${VERSION}  tag: ${TAG}"
 echo "→ building Chrome + Firefox…"
 pnpm package
 
-CHROME_ZIP=".output/chrome-recorder-${VERSION}-chrome.zip"
-FIREFOX_ZIP=".output/chrome-recorder-${VERSION}-firefox.zip"
+CHROME_ZIP=".output/${NAME}-${VERSION}-chrome.zip"
+FIREFOX_ZIP=".output/${NAME}-${VERSION}-firefox.zip"
 
 for f in "$CHROME_ZIP" "$FIREFOX_ZIP"; do
   if [[ ! -f "$f" ]]; then
@@ -84,3 +85,4 @@ else
 fi
 
 echo "✓ done — https://github.com/npalladium/chrome-recorder/releases/tag/${TAG}"
+
