@@ -3,7 +3,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { formatDuration, useElapsedMs, useSession } from "@/hooks/use-session";
 import { sendToBackground } from "@/lib/messaging";
-import { type CaptureConfig, DEFAULT_CAPTURE_CONFIG } from "@/lib/types";
+import { type CaptureConfig, DEFAULT_CAPTURE_CONFIG, type RingStatus } from "@/lib/types";
 import {
   AlertTriangle,
   Camera,
@@ -13,13 +13,124 @@ import {
   Loader2,
   MousePointer,
   Network,
+  RefreshCw,
   Settings,
   Square,
   Video,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const CONFIRM_FLASH_MS = 1500;
+const RING_POLL_MS = 5000;
+
+function formatBufferedTime(oldestMs: number | null): string {
+  if (oldestMs === null) return "0s";
+  const sec = Math.round((Date.now() - oldestMs) / 1000);
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
+function RingSection() {
+  const [status, setStatus] = useState<RingStatus | null>(null);
+  const [toggling, setToggling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const statusRef = useRef<RingStatus | null>(null);
+
+  const fetchStatus = () => {
+    sendToBackground<RingStatus>({ type: "get-ring-status" })
+      .then((s) => {
+        statusRef.current = s;
+        setStatus(s);
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchStatus();
+    const id = setInterval(fetchStatus, RING_POLL_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  const toggle = async () => {
+    if (toggling) return;
+    setToggling(true);
+    setError(null);
+    try {
+      const next = !(statusRef.current?.active ?? false);
+      const result = await sendToBackground<RingStatus>({ type: "toggle-ring", enabled: next });
+      statusRef.current = result;
+      setStatus(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  const exportRing = async () => {
+    try {
+      await sendToBackground({ type: "export-ring" });
+      window.close();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const active = status?.active ?? false;
+  const hasEvents =
+    (status?.eventCounts.console ?? 0) +
+      (status?.eventCounts.network ?? 0) +
+      (status?.eventCounts.interactions ?? 0) >
+    0;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Separator />
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Ring recording
+      </p>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm">
+          <RefreshCw className="h-4 w-4 text-muted-foreground" />
+          Always-on buffer
+        </div>
+        <Switch id="ring-toggle" checked={active} onChange={toggle} disabled={toggling} />
+      </div>
+
+      {active && status && (
+        <div className="text-xs text-muted-foreground pl-6">
+          {hasEvents ? (
+            <>
+              {formatBufferedTime(status.oldestEventMs)} buffered ·{" "}
+              {status.eventCounts.console} console · {status.eventCounts.network} network
+              {status.eventCounts.interactions > 0
+                ? ` · ${status.eventCounts.interactions} int`
+                : ""}
+              {status.hasVideo ? " · video" : ""}
+            </>
+          ) : (
+            "Buffering…"
+          )}
+        </div>
+      )}
+
+      {active && (
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={exportRing}
+          disabled={!hasEvents}
+        >
+          Export ring
+        </Button>
+      )}
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
 
 function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
   const [config, setConfig] = useState<CaptureConfig>(initialConfig);
@@ -122,6 +233,8 @@ function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
       </div>
 
       {error && <p className="text-xs text-destructive">{error}</p>}
+
+      <RingSection />
     </div>
   );
 }
@@ -133,6 +246,13 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
   const [screenshotConfirm, setScreenshotConfirm] = useState(false);
   const [discardPending, setDiscardPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ringActive, setRingActive] = useState(false);
+
+  useEffect(() => {
+    sendToBackground<RingStatus>({ type: "get-ring-status" })
+      .then((s) => setRingActive(s.active))
+      .catch(() => {});
+  }, []);
 
   const wrap = async (fn: () => Promise<unknown>) => {
     try {
@@ -222,6 +342,10 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
           Close the report tab that opened to finish.
         </div>
+      )}
+
+      {ringActive && (
+        <p className="text-xs text-muted-foreground/60">Ring: buffering in background</p>
       )}
 
       {error && <p className="text-xs text-destructive">{error}</p>}

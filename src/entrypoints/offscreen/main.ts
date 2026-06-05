@@ -14,6 +14,8 @@ let opfsWorker: Worker | null = null;
 let totalBytes = 0;
 let warnedAt100MB = false;
 
+let ringRecorder: MediaRecorder | null = null;
+
 chrome.runtime.onMessage.addListener(
   (message: { type: string; streamId?: string; filename?: string }) => {
     if (message.type === "offscreen-start-recording" && message.streamId && message.filename) {
@@ -22,6 +24,12 @@ chrome.runtime.onMessage.addListener(
       });
     } else if (message.type === "offscreen-stop-recording") {
       stopRecording();
+    } else if (message.type === "offscreen-start-ring" && message.streamId) {
+      startRingRecording(message.streamId).catch((err: unknown) => {
+        chrome.runtime.sendMessage({ type: "offscreen-error", message: String(err) });
+      });
+    } else if (message.type === "offscreen-stop-ring") {
+      stopRingRecording();
     }
     return false;
   }
@@ -104,5 +112,45 @@ function stopRecording(): void {
   if (recorder && recorder.state !== "inactive") {
     recorder.stop();
     recorder = null;
+  }
+}
+
+async function startRingRecording(streamId: string): Promise<void> {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: false,
+    video: {
+      // @ts-expect-error
+      mandatory: {
+        chromeMediaSource: "tab",
+        chromeMediaSourceId: streamId,
+      },
+    },
+  });
+
+  const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+    ? "video/webm;codecs=vp9"
+    : "video/webm";
+
+  ringRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 });
+
+  ringRecorder.ondataavailable = (e) => {
+    if (e.data.size === 0) return;
+    e.data.arrayBuffer().then((buf) => {
+      chrome.runtime.sendMessage({ type: "offscreen-ring-chunk", chunk: buf, mimeType });
+    });
+  };
+
+  ringRecorder.onstop = () => {
+    for (const t of stream.getTracks()) t.stop();
+    chrome.runtime.sendMessage({ type: "offscreen-ring-stopped" });
+    ringRecorder = null;
+  };
+
+  ringRecorder.start(2_000);
+}
+
+function stopRingRecording(): void {
+  if (ringRecorder && ringRecorder.state !== "inactive") {
+    ringRecorder.stop();
   }
 }

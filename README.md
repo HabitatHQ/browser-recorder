@@ -1,8 +1,8 @@
 # chrome-recorder
 
-A Chrome extension for capturing debug data and exporting self-contained bug reports. No server, no account, no cloud.
+A browser extension (Chrome + Firefox) for capturing debug data and exporting self-contained browser recordings. No server, no account, no cloud.
 
-Captures console logs, network requests, interactions, DOM snapshots, screenshots, and optional video — all bundled into a local ZIP.
+Captures console logs, network requests, interactions, DOM snapshots, screenshots, and optional video — all bundled into a local ZIP. Includes an always-on **ring buffer** that keeps the last N minutes in the background, so you can capture what just happened without having started a session first.
 
 Download the latest release from [Releases](../../releases). See [GUIDE.md](GUIDE.md) for installation and usage.
 
@@ -22,7 +22,6 @@ To install: load `.output/chrome-mv3/` as an unpacked extension in `chrome://ext
 
 - **Crash resilience** — console, network, screenshots, and DOM snapshots live in `chrome.storage.session`; a browser crash silently wipes them. Video is the only artifact streamed to OPFS. All session data should be persisted to OPFS so a mid-session crash is recoverable.
 - **Local report history** — once a ZIP is exported it's gone from the extension. There is no way to reopen, search, or annotate past reports. A persistent local store (IndexedDB or OPFS) indexed by session would make this a genuinely local-first tool rather than a one-shot exporter.
-- **Always-on ring buffer** — you have to decide to record before the bug happens. A rolling N-minute buffer that can be saved retroactively would cover unplanned captures.
 - **Self-contained report viewer** — the ZIP is readable if you unzip it, but there is no viewer. Bundling a single-file `report.html` inside the ZIP (no server, opens in browser) would make exports useful to non-developers.
 - **WebSocket traffic** — only XHR and fetch are intercepted. Apps that use WebSockets for real-time communication produce no network entries.
 
@@ -38,7 +37,7 @@ The capture engine in `src/vendor/capture-core/` is adapted from [crikket](https
 
 ## Stack
 
-- [WXT](https://wxt.dev) — extension framework (Chrome MV3)
+- [WXT](https://wxt.dev) — extension framework (Chrome MV3 + Firefox MV3)
 - [React 19](https://react.dev) + TypeScript
 - [Tailwind CSS v4](https://tailwindcss.com)
 - [fflate](https://github.com/101arrowz/fflate) — in-browser ZIP

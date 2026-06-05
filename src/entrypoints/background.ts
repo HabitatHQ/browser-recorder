@@ -9,14 +9,25 @@ import {
   appendScreenshot,
   domSnapshotOpfsFilename,
   getCounts,
+  getRingConfig,
   getSession,
   getSettings,
   saveCounts,
+  saveRingConfig,
   saveSettings,
   screenshotOpfsFilename,
+  setRingSnapshot,
   setSession,
 } from "@/lib/storage";
-import type { BgMessage, Session, SessionCounts } from "@/lib/types";
+import {
+  DEFAULT_RING_CONFIG,
+  type BgMessage,
+  type RingConfig,
+  type RingSnapshot,
+  type RingStatus,
+  type Session,
+  type SessionCounts,
+} from "@/lib/types";
 import { reportNonFatalError } from "@/vendor/shared/lib/errors";
 
 // ─── Timing constants ────────────────────────────────────────────────────────
@@ -41,9 +52,27 @@ function emptyCounts(): SessionCounts {
   return { console: 0, network: 0, interactions: 0, domSnapshots: 0, screenshots: 0, errors: 0 };
 }
 
+// ─── Ring state ───────────────────────────────────────────────────────────────
+
+interface TimestampedEvent { timestamp: number; event: unknown }
+interface RingVideoChunk { bytes: Uint8Array; timestamp: number; mimeType: string }
+
+let ringConfig: RingConfig = DEFAULT_RING_CONFIG;
+let ringActive = false;
+let ringTabId: number | null = null;
+let ringTabUrl: string | undefined;
+let ringTabTitle: string | undefined;
+let ringDebuggerSessionId: string | null = null;
+let ringVideoActive = false;
+let ringConsoleEvents: TimestampedEvent[] = [];
+let ringNetworkEvents: TimestampedEvent[] = [];
+let ringInteractionEvents: TimestampedEvent[] = [];
+let ringVideoChunks: RingVideoChunk[] = [];
+
 async function initState(): Promise<void> {
   bgSession = await getSession();
   bgCounts = await getCounts();
+  ringConfig = await getRingConfig();
 }
 
 function persistSession(): Promise<void> {
@@ -99,7 +128,9 @@ type OffscreenMsg =
   | { type: "offscreen-ready" }
   | { type: "offscreen-recording-done"; filename: string; totalBytes: number }
   | { type: "offscreen-size-warning"; megabytes: number }
-  | { type: "offscreen-error"; message: string };
+  | { type: "offscreen-error"; message: string }
+  | { type: "offscreen-ring-chunk"; chunk: ArrayBuffer; mimeType: string }
+  | { type: "offscreen-ring-stopped" };
 
 function isOffscreenMessage(msg: unknown): msg is OffscreenMsg {
   if (typeof msg !== "object" || msg === null || !("type" in msg)) return false;
@@ -114,51 +145,60 @@ export default defineBackground(async () => {
   await sweepOrphanedOpfsFiles();
 
   debuggerBridge = registerDebuggerBackgroundListeners(async (tabId, rawEvents) => {
-    if (bgSession?.tabId !== tabId) return;
-
     type RawEvent = { kind?: string; actionType?: string; metadata?: { mode?: string } };
     const events = rawEvents as RawEvent[];
 
-    let consoleN = 0;
-    let networkN = 0;
-    let interactionsN = 0;
-    let hasAutoTriggerAction = false;
-    for (const e of events) {
-      if (e.kind === "console") consoleN++;
-      else if (e.kind === "network") networkN++;
-      else if (e.kind === "action") {
-        interactionsN++;
-        if (
-          e.actionType === "click" ||
-          e.actionType === "change" ||
-          (e.actionType === "navigation" && e.metadata?.mode !== "initial")
-        ) {
-          hasAutoTriggerAction = true;
+    if (bgSession?.tabId === tabId) {
+      let consoleN = 0;
+      let networkN = 0;
+      let interactionsN = 0;
+      let hasAutoTriggerAction = false;
+      for (const e of events) {
+        if (e.kind === "console") consoleN++;
+        else if (e.kind === "network") networkN++;
+        else if (e.kind === "action") {
+          interactionsN++;
+          if (
+            e.actionType === "click" ||
+            e.actionType === "change" ||
+            (e.actionType === "navigation" && e.metadata?.mode !== "initial")
+          ) {
+            hasAutoTriggerAction = true;
+          }
         }
       }
-    }
-    if (consoleN > 0) bumpCount("console", consoleN);
-    if (networkN > 0) bumpCount("network", networkN);
-    if (interactionsN > 0) bumpCount("interactions", interactionsN);
+      if (consoleN > 0) bumpCount("console", consoleN);
+      if (networkN > 0) bumpCount("network", networkN);
+      if (interactionsN > 0) bumpCount("interactions", interactionsN);
 
-    if (!hasAutoTriggerAction) return;
+      if (hasAutoTriggerAction) {
+        if (bgSession.captureConfig.autoScreenshotOnInteraction) {
+          if (autoSsTimer) clearTimeout(autoSsTimer);
+          autoSsTimer = setTimeout(() => {
+            autoSsTimer = null;
+            void captureAutoScreenshot(tabId);
+          }, INTERACTION_CAPTURE_DEBOUNCE_MS);
+        }
 
-    if (bgSession.captureConfig.autoScreenshotOnInteraction) {
-      if (autoSsTimer) clearTimeout(autoSsTimer);
-      autoSsTimer = setTimeout(() => {
-        autoSsTimer = null;
-        void captureAutoScreenshot(tabId);
-      }, INTERACTION_CAPTURE_DEBOUNCE_MS);
+        if (bgSession.captureConfig.autoDomSnapshotOnInteraction) {
+          if (autoDomTimer) clearTimeout(autoDomTimer);
+          autoDomTimer = setTimeout(() => {
+            autoDomTimer = null;
+            void captureAutoDomSnapshot(tabId);
+          }, INTERACTION_CAPTURE_DEBOUNCE_MS);
+        }
+      }
+    } else if (ringActive && ringTabId === tabId) {
+      pruneRingBuffer();
+      const now = Date.now();
+      for (const ev of events) {
+        const timestamped = { timestamp: now, event: ev };
+        if (ev.kind === "console") ringConsoleEvents.push(timestamped);
+        else if (ev.kind === "network") ringNetworkEvents.push(timestamped);
+        else if (ev.kind === "action") ringInteractionEvents.push(timestamped);
+      }
     }
-
-    if (bgSession.captureConfig.autoDomSnapshotOnInteraction) {
-      if (autoDomTimer) clearTimeout(autoDomTimer);
-      autoDomTimer = setTimeout(() => {
-        autoDomTimer = null;
-        void captureAutoDomSnapshot(tabId);
-      }, INTERACTION_CAPTURE_DEBOUNCE_MS);
-    }
-  }, (tabId) => bgSession?.tabId === tabId);
+  }, (tabId) => bgSession?.tabId === tabId || (ringActive && ringTabId === tabId));
 
   chrome.runtime.onMessage.addListener((message: BgMessage, _sender, sendResponse) => {
     if (isDebuggerRuntimeMessage(message)) return;
@@ -206,6 +246,17 @@ export default defineBackground(async () => {
       url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
     });
     recorderTabId = recorderTab.id ?? null;
+  });
+
+  chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+    if (!ringActive || ringTabId === tabId) return;
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (!tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("about:")) return;
+      await rotateRingToTab(tabId);
+    } catch {
+      // tab may not exist yet
+    }
   });
 });
 
@@ -357,6 +408,31 @@ async function handleMessage(message: BgMessage) {
       bumpCount("domSnapshots");
       return ok({ index });
     }
+
+    case "get-ring-status":
+      return ok(getRingStatus());
+
+    case "get-ring-config":
+      return ok(ringConfig);
+
+    case "save-ring-config":
+      ringConfig = message.ringConfig;
+      await saveRingConfig(ringConfig);
+      return ok(undefined);
+
+    case "toggle-ring": {
+      if (message.enabled && !ringActive) {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) await startRingOnTab(tab.id);
+      } else if (!message.enabled && ringActive) {
+        await stopRingOnTab();
+      }
+      return ok(getRingStatus());
+    }
+
+    case "export-ring":
+      await snapshotRingAndExport();
+      return ok(undefined);
 
     default:
       return fail("Unknown message type");
@@ -520,6 +596,15 @@ async function handleOffscreenMessage(msg: OffscreenMsg): Promise<void> {
   } else if (msg.type === "offscreen-error") {
     reportNonFatalError("Video recording error", new Error(msg.message));
     await closeOffscreenIfOpen();
+  } else if (msg.type === "offscreen-ring-chunk") {
+    pruneRingBuffer();
+    ringVideoChunks.push({
+      bytes: new Uint8Array(msg.chunk),
+      timestamp: Date.now(),
+      mimeType: msg.mimeType,
+    });
+  } else if (msg.type === "offscreen-ring-stopped") {
+    ringVideoActive = false;
   }
 }
 
@@ -549,4 +634,169 @@ async function sweepOrphanedOpfsFiles(): Promise<void> {
   } catch {
     // OPFS not available
   }
+}
+
+// ─── Ring buffer helpers ──────────────────────────────────────────────────────
+
+function pruneRingBuffer(): void {
+  const now = Date.now();
+  const dataCutoff = now - ringConfig.dataDurationSec * 1000;
+  const videoCutoff = now - ringConfig.videoDurationSec * 1000;
+  ringConsoleEvents = ringConsoleEvents.filter((e) => e.timestamp >= dataCutoff);
+  ringNetworkEvents = ringNetworkEvents.filter((e) => e.timestamp >= dataCutoff);
+  ringInteractionEvents = ringInteractionEvents.filter((e) => e.timestamp >= dataCutoff);
+  ringVideoChunks = ringVideoChunks.filter((c) => c.timestamp >= videoCutoff);
+}
+
+function getRingStatus(): RingStatus {
+  const allEvents = [...ringConsoleEvents, ...ringNetworkEvents, ...ringInteractionEvents];
+  const oldest = allEvents.length > 0 ? Math.min(...allEvents.map((e) => e.timestamp)) : null;
+  return {
+    active: ringActive,
+    tabId: ringTabId,
+    tabUrl: ringTabUrl,
+    tabTitle: ringTabTitle,
+    oldestEventMs: oldest,
+    eventCounts: {
+      console: ringConsoleEvents.length,
+      network: ringNetworkEvents.length,
+      interactions: ringInteractionEvents.length,
+    },
+    hasVideo: ringVideoChunks.length > 0,
+  };
+}
+
+async function startRingVideoCapture(tabId: number): Promise<void> {
+  if (!("tabCapture" in chrome) || !("offscreen" in chrome)) return;
+  if (bgSession && bgSession.captureConfig.video && bgSession.status !== "stopping") return;
+
+  let streamId: string;
+  try {
+    streamId = await new Promise<string>((resolve, reject) => {
+      chrome.tabCapture.getMediaStreamId({ targetTabId: tabId }, (id) => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve(id);
+      });
+    });
+  } catch (err) {
+    reportNonFatalError("Ring tabCapture.getMediaStreamId failed", err);
+    return;
+  }
+
+  try {
+    await chrome.offscreen.createDocument({
+      url: chrome.runtime.getURL("offscreen.html"),
+      reasons: ["USER_MEDIA" as chrome.offscreen.Reason],
+      justification: "Record ring tab video via tabCapture getUserMedia",
+    });
+  } catch (err) {
+    reportNonFatalError("Ring failed to create offscreen document", err);
+    return;
+  }
+
+  ringVideoActive = true;
+  await chrome.runtime.sendMessage({ type: "offscreen-start-ring", streamId });
+}
+
+async function stopRingVideoCapture(): Promise<void> {
+  if (!ringVideoActive) return;
+  try {
+    await chrome.runtime.sendMessage({ type: "offscreen-stop-ring" });
+  } catch {
+    // offscreen may already be gone
+  }
+  await new Promise<void>((r) => setTimeout(r, VIDEO_STOP_GRACE_MS));
+  await closeOffscreenIfOpen();
+  ringVideoActive = false;
+}
+
+async function startRingOnTab(tabId: number): Promise<void> {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    ringTabId = tabId;
+    ringTabUrl = tab.url;
+    ringTabTitle = tab.title;
+    ringActive = true;
+
+    const { sessionId: dbgId } = await debuggerBridge.startSession(tabId, {
+      fullSelectorPath: true,
+    });
+    ringDebuggerSessionId = dbgId;
+
+    if (ringConfig.videoDurationSec > 0) {
+      await startRingVideoCapture(tabId);
+    }
+  } catch (err) {
+    reportNonFatalError("Failed to start ring on tab", err);
+    ringActive = false;
+    ringTabId = null;
+  }
+}
+
+async function stopRingOnTab(): Promise<void> {
+  ringActive = false;
+  await stopRingVideoCapture();
+  if (ringDebuggerSessionId) {
+    await debuggerBridge.discardSession(ringDebuggerSessionId).catch(() => {});
+    ringDebuggerSessionId = null;
+  }
+  ringTabId = null;
+  ringTabUrl = undefined;
+  ringTabTitle = undefined;
+  ringConsoleEvents = [];
+  ringNetworkEvents = [];
+  ringInteractionEvents = [];
+  ringVideoChunks = [];
+}
+
+async function rotateRingToTab(newTabId: number): Promise<void> {
+  const wasActive = ringActive;
+  if (wasActive) {
+    await stopRingVideoCapture();
+    if (ringDebuggerSessionId) {
+      await debuggerBridge.discardSession(ringDebuggerSessionId).catch(() => {});
+      ringDebuggerSessionId = null;
+    }
+    ringTabId = null;
+    ringTabUrl = undefined;
+    ringTabTitle = undefined;
+    ringConsoleEvents = [];
+    ringNetworkEvents = [];
+    ringInteractionEvents = [];
+    ringVideoChunks = [];
+    ringActive = false;
+  }
+  await startRingOnTab(newTabId);
+}
+
+async function snapshotRingAndExport(): Promise<void> {
+  pruneRingBuffer();
+
+  let videoOpfsFilename: string | null = null;
+  if (ringVideoChunks.length > 0) {
+    const id = crypto.randomUUID();
+    videoOpfsFilename = `${OPFS_PREFIX}ring-${id}.webm`;
+    const totalSize = ringVideoChunks.reduce((n, c) => n + c.bytes.byteLength, 0);
+    const combined = new Uint8Array(totalSize);
+    let offset = 0;
+    for (const chunk of ringVideoChunks) {
+      combined.set(chunk.bytes, offset);
+      offset += chunk.bytes.byteLength;
+    }
+    await writeToOpfs(videoOpfsFilename, combined);
+  }
+
+  const snapshot: RingSnapshot = {
+    id: crypto.randomUUID(),
+    tabUrl: ringTabUrl,
+    tabTitle: ringTabTitle,
+    startedAt: Date.now(),
+    console: ringConsoleEvents.map((e) => e.event),
+    network: ringNetworkEvents.map((e) => e.event),
+    interactions: ringInteractionEvents.map((e) => e.event),
+    videoOpfsFilename,
+  };
+
+  await setRingSnapshot(snapshot);
+  await chrome.tabs.create({ url: chrome.runtime.getURL("/recorder.html?mode=ring") });
 }

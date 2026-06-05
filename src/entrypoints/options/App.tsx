@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
@@ -8,7 +9,9 @@ import {
   type CaptureConfig,
   DEFAULT_CAPTURE_CONFIG,
   DEFAULT_NETWORK_FILTER,
+  DEFAULT_RING_CONFIG,
   type NetworkFilterConfig,
+  type RingConfig,
 } from "@/lib/types";
 import { useEffect, useState } from "react";
 
@@ -29,6 +32,7 @@ function InfoTooltip({ text }: { text: string }) {
 export default function App() {
   const [captureConfig, setCaptureConfig] = useState<CaptureConfig>(DEFAULT_CAPTURE_CONFIG);
   const [networkFilter, setNetworkFilter] = useState<NetworkFilterConfig>(DEFAULT_NETWORK_FILTER);
+  const [ringConfig, setRingConfig] = useState<RingConfig>(DEFAULT_RING_CONFIG);
   const [exclusionText, setExclusionText] = useState("");
   const [customHeadersText, setCustomHeadersText] = useState("");
   const [isDirty, setIsDirty] = useState(false);
@@ -45,6 +49,9 @@ export default function App() {
         setExclusionText(nf.exclusionPatterns.join("\n"));
         setCustomHeadersText(nf.customRedactedHeaders.join("\n"));
       })
+      .catch(() => {});
+    sendToBackground<RingConfig>({ type: "get-ring-config" })
+      .then((rc) => setRingConfig(rc))
       .catch(() => {});
   }, []);
 
@@ -84,6 +91,7 @@ export default function App() {
         customRedactedHeaders: customHeaders,
       };
       await sendToBackground({ type: "save-settings", captureConfig, networkFilter: finalFilter });
+      await sendToBackground({ type: "save-ring-config", ringConfig });
       setSaved(true);
       setIsDirty(false);
       setTimeout(() => setSaved(false), 2000);
@@ -363,7 +371,7 @@ export default function App() {
           </div>
         </section>
 
-        <section className="mb-8">
+        <section className="mb-6">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
             Header redaction
           </h2>
@@ -417,6 +425,87 @@ export default function App() {
                 className="font-mono text-xs"
               />
               <p className="text-xs text-muted-foreground mt-1">One header name per line.</p>
+            </div>
+          </div>
+        </section>
+        <section className="mb-8">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Ring recording
+          </h2>
+          <Separator className="mb-4" />
+
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-ring-enabled" className="font-medium">
+                    Enable ring recording
+                  </Label>
+                  <InfoTooltip text="Always-on background buffer that silently captures the last N minutes of activity on the active tab. Use 'Export ring' in the popup to snapshot and review the buffer." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Toggle from the popup; this sets the default
+                </p>
+              </div>
+              <Switch
+                id="opt-ring-enabled"
+                checked={ringConfig.enabled}
+                onChange={() => {
+                  setRingConfig((r) => ({ ...r, enabled: !r.enabled }));
+                  setIsDirty(true);
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <Label htmlFor="opt-ring-data" className="font-medium">
+                  Data buffer (minutes)
+                </Label>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Console, network, interactions retention
+                </p>
+              </div>
+              <Input
+                id="opt-ring-data"
+                type="number"
+                min={1}
+                max={60}
+                className="w-20 text-sm"
+                value={Math.round(ringConfig.dataDurationSec / 60)}
+                onChange={(e) => {
+                  const mins = Math.max(1, Number(e.target.value));
+                  setRingConfig((r) => ({ ...r, dataDurationSec: mins * 60 }));
+                  setIsDirty(true);
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-ring-video" className="font-medium">
+                    Video buffer (minutes)
+                  </Label>
+                  <InfoTooltip text="Chrome only. Keeps only the last N minutes of ring video in memory. Set to 0 to disable ring video entirely." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  In-memory only; written to disk on export · Chrome only
+                </p>
+              </div>
+              <Input
+                id="opt-ring-video"
+                type="number"
+                min={0}
+                max={30}
+                className="w-20 text-sm"
+                value={Math.round(ringConfig.videoDurationSec / 60)}
+                onChange={(e) => {
+                  const mins = Math.max(0, Number(e.target.value));
+                  setRingConfig((r) => ({ ...r, videoDurationSec: mins * 60 }));
+                  setIsDirty(true);
+                }}
+              />
             </div>
           </div>
         </section>

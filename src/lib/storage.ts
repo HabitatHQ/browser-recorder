@@ -2,7 +2,10 @@ import {
   type CaptureConfig,
   DEFAULT_CAPTURE_CONFIG,
   DEFAULT_NETWORK_FILTER,
+  DEFAULT_RING_CONFIG,
   type NetworkFilterConfig,
+  type RingConfig,
+  type RingSnapshot,
   type Session,
   type SessionCounts,
 } from "./types";
@@ -25,6 +28,8 @@ const KEYS = {
   captureConfig: "captureConfig",
   networkFilter: "networkFilter",
   screenshots: "screenshots", // string[] — base64 data URLs for standalone (non-session) screenshots only
+  ringConfig: "ringConfig",
+  ringSnapshot: "ringSnapshot",
 } as const;
 
 // Session state lives in chrome.storage.session (cleared on browser restart)
@@ -92,4 +97,26 @@ export async function saveSettings(
     [KEYS.captureConfig]: captureConfig,
     [KEYS.networkFilter]: networkFilter,
   });
+}
+
+export async function getRingConfig(): Promise<RingConfig> {
+  const result = await chrome.storage.local.get(KEYS.ringConfig);
+  return (result[KEYS.ringConfig] as RingConfig | undefined) ?? DEFAULT_RING_CONFIG;
+}
+
+export async function saveRingConfig(ringConfig: RingConfig): Promise<void> {
+  await chrome.storage.local.set({ [KEYS.ringConfig]: ringConfig });
+}
+
+export async function setRingSnapshot(snapshot: RingSnapshot | null): Promise<void> {
+  if (snapshot === null) {
+    await chrome.storage.session.remove(KEYS.ringSnapshot);
+  } else {
+    await chrome.storage.session.set({ [KEYS.ringSnapshot]: snapshot });
+  }
+}
+
+export async function getRingSnapshot(): Promise<RingSnapshot | null> {
+  const result = await chrome.storage.session.get(KEYS.ringSnapshot);
+  return (result[KEYS.ringSnapshot] as RingSnapshot | undefined) ?? null;
 }
