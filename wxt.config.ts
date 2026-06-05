@@ -10,11 +10,11 @@ export default defineConfig({
   manifest: ({ browser }) => {
     const isFirefox = browser === "firefox";
     return {
-      name: "Chrome Recorder",
+      name: "Browser Recorder",
       short_name: "Recorder",
       description: "Capture console, network, interactions and DOM snapshots for bug reports",
       action: {
-        default_title: "Chrome Recorder",
+        default_title: "Browser Recorder",
         default_popup: "popup.html",
       },
       options_ui: {
@@ -44,10 +44,13 @@ export default defineConfig({
         ...(!isFirefox ? (["tabCapture", "offscreen"] as const) : []),
       ],
       host_permissions: ["<all_urls>"],
+      ...(!isFirefox && {
+        key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqMJOHRmc9Xix5QczXMbZjdFGsglwBDQvWxXMvlvJ3gvXJxDqwBGp8CXAgu3mAwjtcEAFD0+gCRlOCswKXC4PEUZsLWbUK+x+85sDtWZjH3Z0Nd4FV20F1qxx5ZWi/sUaexoJMaUmbmZ+G32n97NlhIyTag3KdgyKhQmX8DBNSMEK5mW1SuoFGouiMjwdnWESQYGLcZMn/yg9EF5A8/QqOQn6sYXSTHxdkXkJKrTMt+HgVqn1xuAMrHhMFQ51v2YyxO5PysLqFGP+HUOD1xyN1sBU41+tHNnJNFzvdjeZ73cUstdiDtGah8D6jpeVtTH1LTqGfpLeN/1thkNkgytmBQIDAQAB",
+      }),
       ...(isFirefox && {
         browser_specific_settings: {
           gecko: {
-            id: "chrome-recorder@npalladium.dev",
+            id: "browser-recorder@npalladium.dev",
             strict_min_version: "128.0",
           },
         },
