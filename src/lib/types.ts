@@ -77,6 +77,39 @@ export interface SubmitFormValues {
   notes: string;
 }
 
+export interface RingConfig {
+  enabled: boolean;
+  dataDurationSec: number;
+  videoDurationSec: number;
+}
+
+export const DEFAULT_RING_CONFIG: RingConfig = {
+  enabled: false,
+  dataDurationSec: 300,
+  videoDurationSec: 300,
+};
+
+export interface RingStatus {
+  active: boolean;
+  tabId: number | null;
+  tabUrl: string | undefined;
+  tabTitle: string | undefined;
+  oldestEventMs: number | null;
+  eventCounts: { console: number; network: number; interactions: number };
+  hasVideo: boolean;
+}
+
+export interface RingSnapshot {
+  id: string;
+  tabUrl: string | undefined;
+  tabTitle: string | undefined;
+  startedAt: number;
+  console: unknown[];
+  network: unknown[];
+  interactions: unknown[];
+  videoOpfsFilename: string | null;
+}
+
 // Messages between popup/recorder and background
 export type BgMessage =
   | { type: "get-session" }
@@ -87,6 +120,11 @@ export type BgMessage =
   | { type: "snapshot-dom" }
   | { type: "get-counts" }
   | { type: "get-settings" }
-  | { type: "save-settings"; captureConfig: CaptureConfig; networkFilter: NetworkFilterConfig };
+  | { type: "save-settings"; captureConfig: CaptureConfig; networkFilter: NetworkFilterConfig }
+  | { type: "get-ring-status" }
+  | { type: "toggle-ring"; enabled: boolean }
+  | { type: "export-ring" }
+  | { type: "save-ring-config"; ringConfig: RingConfig }
+  | { type: "get-ring-config" };
 
 export type BgResponse<T = undefined> = { ok: true; data: T } | { ok: false; error: string };

@@ -9,7 +9,14 @@ import { sendDebuggerMessage } from "@/lib/bug-report-debugger/messaging";
 import { exportReportAsZip } from "@/lib/export";
 import { sendToBackground } from "@/lib/messaging";
 import { domSnapshotOpfsFilename } from "@/lib/storage";
-import type { ScreenshotEntry, Session, SessionCounts, SubmitFormValues } from "@/lib/types";
+import {
+  DEFAULT_CAPTURE_CONFIG,
+  type RingSnapshot,
+  type ScreenshotEntry,
+  type Session,
+  type SessionCounts,
+  type SubmitFormValues,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { GET_SESSION_SNAPSHOT_MESSAGE } from "@/vendor/capture-core/debugger/constants";
 import type {
@@ -172,6 +179,46 @@ export default function App() {
           return;
         }
 
+        if (mode === "ring") {
+          const ringResult = (await chrome.storage.session.get("ringSnapshot")) as {
+            ringSnapshot?: RingSnapshot;
+          };
+          const ring = ringResult.ringSnapshot;
+          if (ring) {
+            const ringSession: Session = {
+              id: ring.id,
+              tabId: -1,
+              tabUrl: ring.tabUrl,
+              tabTitle: ring.tabTitle,
+              startedAt: ring.startedAt,
+              status: "stopping",
+              captureConfig: DEFAULT_CAPTURE_CONFIG,
+              debuggerSessionId: null,
+              domSnapshotCount: 0,
+              domSnapshotKeys: [],
+              screenshotFilenames: [],
+              videoOpfsFilename: ring.videoOpfsFilename,
+            };
+            setSession(ringSession);
+            setCounts({
+              console: ring.console.length,
+              network: ring.network.length,
+              interactions: ring.interactions.length,
+              domSnapshots: 0,
+              screenshots: 0,
+              errors: 0,
+            });
+            setDebuggerEvents({
+              console: ring.console,
+              network: ring.network,
+              interactions: ring.interactions,
+            });
+            setFormValues((v) => ({ ...v, title: ring.tabTitle ?? "Browser recording" }));
+          }
+          setState("form");
+          return;
+        }
+
         const dir = await navigator.storage.getDirectory();
 
         const [loadedScreenshots, loadedSnaps] = await Promise.all([
@@ -277,6 +324,9 @@ export default function App() {
         debuggerEvents,
       });
       setExportFilename(filename);
+      if (modeRef.current === "ring") {
+        await chrome.storage.session.remove("ringSnapshot");
+      }
       setState("success");
     } catch (err) {
       setExportError(err instanceof Error ? err.message : String(err));

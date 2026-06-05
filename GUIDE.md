@@ -2,10 +2,18 @@
 
 ## Installation
 
+### Chrome
+
 1. Extract the downloaded zip to a local folder.
-2. Open `chrome://extensions` in Chrome.
+2. Open `chrome://extensions`.
 3. Enable **Developer mode** (toggle, top-right).
 4. Click **Load unpacked** and select the extracted folder.
+
+### Firefox
+
+1. Extract the downloaded zip to a local folder.
+2. Open `about:debugging#/runtime/this-firefox`.
+3. Click **Load Temporary Add-on** and select the `manifest.json` inside the folder.
 
 The extension icon appears in the toolbar. Pin it for quick access.
 
@@ -13,11 +21,20 @@ The extension icon appears in the toolbar. Pin it for quick access.
 
 ## Usage
 
+### Two ways to capture
+
+There are two independent capture modes — use whichever fits the situation:
+
+| Mode | When to use |
+|---|---|
+| **Session** | You know you're about to reproduce a bug. Start → reproduce → stop → export. |
+| **Ring recording** | You didn't plan to record but something just went wrong. The ring buffer keeps the last N minutes silently in the background — just export what's already there. |
+
 ### Starting a session
 
 Click the extension icon or press **Alt+Shift+R**. The icon badge turns red while recording is active.
 
-Click the icon again (or press **Alt+Shift+S**) to stop the session. The report popup opens automatically.
+Click the icon again (or press **Alt+Shift+S**) to stop the session. The report tab opens automatically — complete or close it to finish.
 
 ### Capture channels
 
@@ -34,15 +51,27 @@ All channels are independently toggled in the **popup** or the **Options page** 
 
 Enable **auto-capture** in Options to take a DOM snapshot and/or screenshot automatically after each recorded interaction.
 
+### Ring recording
+
+Ring recording is an always-on buffer that continuously captures the last N minutes in the background, without a formal session.
+
+**To enable:** open the popup and toggle **Ring recording** on. The buffer starts immediately on the current tab and follows you as you switch tabs. A live count of buffered events is shown below the toggle.
+
+**To export:** click **Export ring** in the popup. The report tab opens pre-populated with the buffered data — add a title and any notes, then export the ZIP.
+
+Ring recording captures the same data as a session (console, network, interactions, and optionally video on Chrome). Configure the buffer duration separately for data and video in **Options → Ring recording** (default: 5 minutes each).
+
+> **Note:** ring video pauses while a session with video recording is active, since both share the same capture mechanism. Data buffering (console/network/interactions) is unaffected.
+
 ### Taking a screenshot
 
 Press **Alt+Shift+C** or click **Screenshot** in the popup. The annotation canvas opens — draw arrows, rectangles, or apply blur before saving.
 
 Screenshots taken outside a session are included if a session is started before exporting.
 
-### Exporting a report
+### Exporting
 
-Click **Export ZIP** in the popup or report view. A self-contained `.zip` is saved locally containing:
+Click **Export ZIP** in the report tab. A self-contained `.zip` is saved locally — named `browser-recording-{title}-{date}.zip` — containing:
 
 - `console.json` — console entries
 - `network.json` — network requests
