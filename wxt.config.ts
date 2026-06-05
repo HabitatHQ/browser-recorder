@@ -13,7 +13,6 @@ export default defineConfig({
       name: "Chrome Recorder",
       short_name: "Recorder",
       description: "Capture console, network, interactions and DOM snapshots for bug reports",
-      version: "0.1.0",
       action: {
         default_title: "Chrome Recorder",
         default_popup: "popup.html",

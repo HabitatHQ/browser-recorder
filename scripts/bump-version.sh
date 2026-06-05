@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Bumps the extension version in package.json and wxt.config.ts, commits, and tags.
+# Bumps the extension version in package.json, commits, and tags.
+# WXT reads the version from package.json automatically — no other files to update.
 # Usage: ./scripts/bump-version.sh <patch|minor|major|x.y.z>
 
 set -euo pipefail
@@ -61,23 +62,9 @@ node -e "
   fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
 "
 
-# ── Update wxt.config.ts ──────────────────────────────────────────────────────
-
-# Replace the version string inside the manifest() call only (the one that
-# follows 'version:' on its own line, with surrounding whitespace).
-sed -i '' "s/version: \"${CURRENT}\"/version: \"${NEW_VERSION}\"/" wxt.config.ts
-
-# Verify the replacement landed exactly once
-COUNT="$(grep -c "version: \"${NEW_VERSION}\"" wxt.config.ts)"
-if [[ "$COUNT" -ne 1 ]]; then
-  echo "Error: expected exactly 1 version line in wxt.config.ts, found ${COUNT}." >&2
-  echo "Roll back with: git checkout -- package.json wxt.config.ts" >&2
-  exit 1
-fi
-
 # ── Commit and tag ────────────────────────────────────────────────────────────
 
-git add package.json wxt.config.ts
+git add package.json
 git commit -m "Bump version to ${NEW_VERSION}"
 git tag "v${NEW_VERSION}"
 
