@@ -370,7 +370,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-3xl px-4 py-8">
+      <div className="mx-auto max-w-5xl px-4 py-8">
         <h1 className="text-xl font-semibold mb-6">Review &amp; export bug report</h1>
 
         <form onSubmit={handleSubmit}>
@@ -410,12 +410,11 @@ export default function App() {
                       >
                         {ev.level}
                       </span>
-                      <span className="flex-1 truncate text-foreground">{ev.message}</span>
-                      {relSec && (
-                        <span className="shrink-0 text-muted-foreground/60 w-10 text-right">
-                          {relSec}s
-                        </span>
-                      )}
+                      <span className="flex-1 break-all text-foreground min-w-0">{ev.message}</span>
+                      <span className="shrink-0 text-muted-foreground/60 text-right tabular-nums text-[10px]">
+                        {relSec ? `+${relSec}s` : ""}
+                        {ev.timestamp ? ` (${new Date(ev.timestamp).toLocaleTimeString()})` : ""}
+                      </span>
                     </div>
                   );
                 }}
@@ -432,7 +431,7 @@ export default function App() {
                     ? ((ev.timestamp - session.startedAt) / 1000).toFixed(1)
                     : null;
                   return (
-                    <div key={i} className="flex items-center gap-2 py-0.5 text-xs font-mono">
+                    <div key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-0.5 text-xs font-mono">
                       <span
                         className={cn(
                           "shrink-0 rounded px-1 text-[10px] leading-5",
@@ -444,12 +443,11 @@ export default function App() {
                         {ev.status ?? "—"}
                       </span>
                       <span className="shrink-0 text-muted-foreground">{ev.method}</span>
-                      <span className="flex-1 truncate text-foreground">{ev.url}</span>
-                      {relSec && (
-                        <span className="shrink-0 text-muted-foreground/60 w-10 text-right">
-                          {relSec}s
-                        </span>
-                      )}
+                      <span className="flex-1 break-all text-foreground min-w-0">{ev.url}</span>
+                      <span className="shrink-0 text-muted-foreground/60 text-right tabular-nums">
+                        {relSec ? `+${relSec}s` : ""}
+                        {ev.timestamp ? ` (${new Date(ev.timestamp).toLocaleTimeString()})` : ""}
+                      </span>
                     </div>
                   );
                 }}
@@ -487,11 +485,10 @@ export default function App() {
                             {String(meta.mode)}
                           </span>
                         )}
-                        {relSec && (
-                          <span className="text-muted-foreground/60 shrink-0 w-10 text-right">
-                            {relSec}s
-                          </span>
-                        )}
+                        <span className="text-muted-foreground/60 shrink-0 text-right tabular-nums">
+                          {relSec ? `+${relSec}s` : ""}
+                          {ev.timestamp ? ` (${new Date(ev.timestamp).toLocaleTimeString()})` : ""}
+                        </span>
                       </div>
                       {!!(meta.label ?? meta.text ?? meta.inputType ?? meta.href) && (
                         <div className="pl-[88px] text-muted-foreground/70 truncate">

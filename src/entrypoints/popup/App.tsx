@@ -217,6 +217,13 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
         )}
       </div>
 
+      {isStopping && (
+        <div className="flex items-center gap-1.5 rounded-md bg-muted px-2.5 py-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+          Close the report tab that opened to finish.
+        </div>
+      )}
+
       {error && <p className="text-xs text-destructive">{error}</p>}
 
       <Button className="w-full" onClick={stopSession} disabled={isStopping}>
