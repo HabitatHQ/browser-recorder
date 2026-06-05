@@ -120,7 +120,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
         ? (() => { try { return new URL(session.tabUrl).hostname; } catch { return ""; } })()
         : "";
   const slug = slugify(rawSlug);
-  const filename = `bug-report${slug ? `-${slug}` : ""}-${toFilenameTimestamp(now)}.zip`;
+  const filename = `browser-recording${slug ? `-${slug}` : ""}-${toFilenameTimestamp(now)}.zip`;
 
   const metadata = {
     title: formValues.title,
