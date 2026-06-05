@@ -23,10 +23,13 @@ import type {
   DebuggerActionEvent,
   DebuggerConsoleEvent,
   DebuggerNetworkEvent,
+  DebuggerSSEEvent,
   DebuggerSessionSnapshot,
+  DebuggerWebSocketEvent,
 } from "@/vendor/capture-core/debugger/types";
 import {
   AlertTriangle,
+  ArrowLeftRight,
   Camera,
   CheckCircle2,
   ChevronDown,
@@ -37,6 +40,7 @@ import {
   FolderOpen,
   MousePointer,
   Network,
+  Radio,
   RotateCcw,
   Trash2,
   Video,
@@ -49,6 +53,8 @@ interface DebuggerEvents {
   console: unknown[];
   network: unknown[];
   interactions: unknown[];
+  websocket: unknown[];
+  sse: unknown[];
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -123,6 +129,8 @@ export default function App() {
     console: 0,
     network: 0,
     interactions: 0,
+    websocket: 0,
+    sse: 0,
     domSnapshots: 0,
     screenshots: 0,
     errors: 0,
@@ -134,6 +142,8 @@ export default function App() {
     console: [],
     network: [],
     interactions: [],
+    websocket: [],
+    sse: [],
   });
   const [formValues, setFormValues] = useState<SubmitFormValues>({
     title: "Bug report",
@@ -204,6 +214,8 @@ export default function App() {
               console: ring.console.length,
               network: ring.network.length,
               interactions: ring.interactions.length,
+              websocket: 0,
+              sse: 0,
               domSnapshots: 0,
               screenshots: 0,
               errors: 0,
@@ -212,6 +224,8 @@ export default function App() {
               console: ring.console,
               network: ring.network,
               interactions: ring.interactions,
+              websocket: [],
+              sse: [],
             });
             setFormValues((v) => ({ ...v, title: ring.tabTitle ?? "Browser recording" }));
           }
@@ -267,15 +281,21 @@ export default function App() {
               const consoleEvts: unknown[] = [];
               const networkEvts: unknown[] = [];
               const actionEvts: unknown[] = [];
+              const wsEvts: unknown[] = [];
+              const sseEvts: unknown[] = [];
               for (const ev of snapshot.events) {
                 if (ev.kind === "console") consoleEvts.push(ev);
                 else if (ev.kind === "network") networkEvts.push(ev);
                 else if (ev.kind === "action") actionEvts.push(ev);
+                else if (ev.kind === "websocket") wsEvts.push(ev);
+                else if (ev.kind === "sse") sseEvts.push(ev);
               }
               setDebuggerEvents({
                 console: consoleEvts,
                 network: networkEvts,
                 interactions: actionEvts,
+                websocket: wsEvts,
+                sse: sseEvts,
               });
             }
           } catch {
@@ -498,6 +518,71 @@ export default function App() {
                       </span>
                       <span className="shrink-0 text-muted-foreground">{ev.method}</span>
                       <span className="flex-1 break-all text-foreground min-w-0">{ev.url}</span>
+                      <span className="shrink-0 text-muted-foreground/60 text-right tabular-nums">
+                        {relSec ? `+${relSec}s` : ""}
+                        {ev.timestamp ? ` (${new Date(ev.timestamp).toLocaleTimeString()})` : ""}
+                      </span>
+                    </div>
+                  );
+                }}
+              />
+              <Separator />
+              <SummaryRow
+                icon={<ArrowLeftRight className="h-4 w-4 text-muted-foreground" />}
+                label="WebSocket"
+                count={counts.websocket}
+                items={debuggerEvents.websocket}
+                renderItem={(item, i) => {
+                  const ev = item as DebuggerWebSocketEvent;
+                  const relSec = session
+                    ? ((ev.timestamp - session.startedAt) / 1000).toFixed(1)
+                    : null;
+                  return (
+                    <div key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-0.5 text-xs font-mono">
+                      <span
+                        className={cn(
+                          "shrink-0 rounded px-1 text-[10px] leading-5",
+                          ev.event === "send"
+                            ? "bg-blue-500/15 text-blue-700 dark:text-blue-400"
+                            : ev.event === "message"
+                              ? "bg-green-500/15 text-green-700 dark:text-green-400"
+                              : ev.event === "error"
+                                ? "bg-destructive/20 text-destructive"
+                                : "bg-muted-foreground/15 text-muted-foreground"
+                        )}
+                      >
+                        {ev.event === "send" ? "↑" : ev.event === "message" ? "↓" : ev.event}
+                      </span>
+                      <span className="flex-1 break-all text-foreground min-w-0">
+                        {ev.data ?? ev.url}
+                      </span>
+                      <span className="shrink-0 text-muted-foreground/60 text-right tabular-nums">
+                        {relSec ? `+${relSec}s` : ""}
+                        {ev.timestamp ? ` (${new Date(ev.timestamp).toLocaleTimeString()})` : ""}
+                      </span>
+                    </div>
+                  );
+                }}
+              />
+              <Separator />
+              <SummaryRow
+                icon={<Radio className="h-4 w-4 text-muted-foreground" />}
+                label="SSE"
+                count={counts.sse}
+                items={debuggerEvents.sse}
+                renderItem={(item, i) => {
+                  const ev = item as DebuggerSSEEvent;
+                  const relSec = session
+                    ? ((ev.timestamp - session.startedAt) / 1000).toFixed(1)
+                    : null;
+                  return (
+                    <div key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-0.5 text-xs font-mono">
+                      <span className="shrink-0 rounded px-1 text-[10px] leading-5 bg-purple-500/15 text-purple-700 dark:text-purple-400">
+                        {ev.eventType ?? ev.event}
+                      </span>
+                      <span className="flex-1 break-all text-foreground min-w-0">
+                        {ev.data ?? ev.url}
+                      </span>
                       <span className="shrink-0 text-muted-foreground/60 text-right tabular-nums">
                         {relSec ? `+${relSec}s` : ""}
                         {ev.timestamp ? ` (${new Date(ev.timestamp).toLocaleTimeString()})` : ""}

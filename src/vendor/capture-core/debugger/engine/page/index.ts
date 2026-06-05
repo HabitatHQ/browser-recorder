@@ -3,7 +3,7 @@ import { installConsoleCapture } from "./console";
 import { INSTALL_FLAG } from "./constants";
 import { createPageDiagnostics } from "./diagnostics";
 import { createEventQueue } from "./event-queue";
-import { installNetworkCapture } from "./network";
+import { installNetworkCapture, type SSEPayload, type WebSocketPayload } from "./network";
 import { createStringifyValue } from "./serializer";
 import type { ConsoleLevel } from "./types";
 import { installUncaughtExceptionCapture } from "./uncaught";
@@ -76,11 +76,15 @@ export function installDebuggerPageRuntime(config: PageRuntimeConfig = {}): void
     responseBody?: string;
   }) => {
     diagnostics.recordNetworkEvent(payload.url);
-    enqueueEvent({
-      kind: "network",
-      timestamp: Date.now(),
-      ...payload,
-    });
+    enqueueEvent({ kind: "network", timestamp: Date.now(), ...payload });
+  };
+
+  const postWebSocket = (payload: WebSocketPayload) => {
+    enqueueEvent({ kind: "websocket", timestamp: Date.now(), ...payload });
+  };
+
+  const postSSE = (payload: SSEPayload) => {
+    enqueueEvent({ kind: "sse", timestamp: Date.now(), ...payload });
   };
 
   installActionAndNavigationCapture({
@@ -88,22 +92,11 @@ export function installDebuggerPageRuntime(config: PageRuntimeConfig = {}): void
     fullSelectorPath: config.fullSelectorPath ?? true,
   });
 
-  installConsoleCapture({
-    reporter,
-    postConsole,
-  });
-
-  installUncaughtExceptionCapture({
-    reporter,
-    postConsole,
-  });
+  installConsoleCapture({ reporter, postConsole });
+  installUncaughtExceptionCapture({ reporter, postConsole });
 
   try {
-    installNetworkCapture({
-      diagnostics,
-      reporter,
-      postNetwork,
-    });
+    installNetworkCapture({ diagnostics, reporter, postNetwork }, { postWebSocket, postSSE });
   } catch (error) {
     reporter.reportNonFatalError("Failed to install network capture in debugger runtime", error);
   }

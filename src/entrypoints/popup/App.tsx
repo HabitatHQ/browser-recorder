@@ -307,6 +307,8 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
   const statusParts = [
     `${counts.console} console`,
     `${counts.network} network`,
+    counts.websocket > 0 ? `${counts.websocket} ws` : null,
+    counts.sse > 0 ? `${counts.sse} sse` : null,
     counts.interactions > 0 ? `${counts.interactions} int` : null,
     counts.domSnapshots > 0 ? `${counts.domSnapshots} dom` : null,
     counts.screenshots > 0 ? `${counts.screenshots} ss` : null,

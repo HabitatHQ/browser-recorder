@@ -42,7 +42,32 @@ export interface DebuggerNetworkEvent {
   responseBody?: string;
 }
 
-export type DebuggerEvent = DebuggerActionEvent | DebuggerConsoleEvent | DebuggerNetworkEvent;
+export interface DebuggerWebSocketEvent {
+  kind: "websocket";
+  timestamp: number;
+  url: string;
+  event: "open" | "close" | "error" | "send" | "message";
+  data?: string;
+  code?: number;
+  reason?: string;
+}
+
+export interface DebuggerSSEEvent {
+  kind: "sse";
+  timestamp: number;
+  url: string;
+  event: "open" | "error" | "message";
+  data?: string;
+  eventType?: string;
+  lastEventId?: string;
+}
+
+export type DebuggerEvent =
+  | DebuggerActionEvent
+  | DebuggerConsoleEvent
+  | DebuggerNetworkEvent
+  | DebuggerWebSocketEvent
+  | DebuggerSSEEvent;
 
 export interface DebuggerSessionSnapshot {
   sessionId: string;

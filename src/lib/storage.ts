@@ -53,6 +53,8 @@ export async function getCounts(): Promise<SessionCounts> {
       console: 0,
       network: 0,
       interactions: 0,
+      websocket: 0,
+      sse: 0,
       domSnapshots: 0,
       screenshots: 0,
       errors: 0,

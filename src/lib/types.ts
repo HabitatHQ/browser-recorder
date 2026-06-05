@@ -66,6 +66,8 @@ export interface SessionCounts {
   console: number;
   network: number;
   interactions: number;
+  websocket: number;
+  sse: number;
   domSnapshots: number;
   screenshots: number;
   errors: number;
