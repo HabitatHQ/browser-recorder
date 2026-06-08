@@ -84,10 +84,14 @@ export async function getSettings(): Promise<{
 }> {
   const result = await chrome.storage.local.get([KEYS.captureConfig, KEYS.networkFilter]);
   return {
-    captureConfig:
-      (result[KEYS.captureConfig] as CaptureConfig | undefined) ?? DEFAULT_CAPTURE_CONFIG,
-    networkFilter:
-      (result[KEYS.networkFilter] as NetworkFilterConfig | undefined) ?? DEFAULT_NETWORK_FILTER,
+    captureConfig: {
+      ...DEFAULT_CAPTURE_CONFIG,
+      ...(result[KEYS.captureConfig] as CaptureConfig | undefined),
+    },
+    networkFilter: {
+      ...DEFAULT_NETWORK_FILTER,
+      ...(result[KEYS.networkFilter] as NetworkFilterConfig | undefined),
+    },
   };
 }
 
