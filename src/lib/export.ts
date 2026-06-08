@@ -75,7 +75,9 @@ export function computeExportBaseName(
 ): string {
   if (zipTitleFilename) {
     const s = slugify(formValues.title);
-    return s || `browser-recording-${toFilenameTimestamp(now)}`;
+    return s
+      ? `browser-recording-${s}-${toFilenameTimestamp(now)}`
+      : `browser-recording-${toFilenameTimestamp(now)}`;
   }
   const rawSlug =
     formValues.title && formValues.title !== "Bug report"
