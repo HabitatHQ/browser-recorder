@@ -1,0 +1,25 @@
+{
+  "name": "@browser-recorder/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": {
+    "browser-recorder": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "dev": "tsx src/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@browser-recorder/core": "workspace:*",
+    "@inquirer/prompts": "^8.5.2",
+    "commander": "^15.0.0",
+    "fflate": "^0.8.3",
+    "playwright": "^1.60.0"
+  }
+}
