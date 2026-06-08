@@ -3,25 +3,28 @@ import {
   registerDebuggerBackgroundListeners,
 } from "@/lib/bug-report-debugger/engine/background";
 import { isDebuggerRuntimeMessage } from "@/lib/bug-report-debugger/messaging";
+import { slugify, toFilenameTimestamp } from "@/lib/export";
 import { fail, ok } from "@/lib/messaging";
 import {
   OPFS_PREFIX,
-  appendScreenshot,
+  appendStandaloneScreenshotFilename,
   domSnapshotOpfsFilename,
   getCounts,
   getRingConfig,
   getSession,
   getSettings,
+  getStandaloneScreenshotFilenames,
   saveCounts,
   saveRingConfig,
   saveSettings,
   screenshotOpfsFilename,
   setRingSnapshot,
   setSession,
+  standaloneScreenshotOpfsFilename,
 } from "@/lib/storage";
 import {
-  DEFAULT_RING_CONFIG,
   type BgMessage,
+  DEFAULT_RING_CONFIG,
   type RingConfig,
   type RingSnapshot,
   type RingStatus,
@@ -49,13 +52,29 @@ let bgCounts: SessionCounts = emptyCounts();
 let recorderTabId: number | null = null;
 
 function emptyCounts(): SessionCounts {
-  return { console: 0, network: 0, interactions: 0, websocket: 0, sse: 0, domSnapshots: 0, screenshots: 0, errors: 0 };
+  return {
+    console: 0,
+    network: 0,
+    interactions: 0,
+    websocket: 0,
+    sse: 0,
+    domSnapshots: 0,
+    screenshots: 0,
+    errors: 0,
+  };
 }
 
 // ─── Ring state ───────────────────────────────────────────────────────────────
 
-interface TimestampedEvent { timestamp: number; event: unknown }
-interface RingVideoChunk { bytes: Uint8Array; timestamp: number; mimeType: string }
+interface TimestampedEvent {
+  timestamp: number;
+  event: unknown;
+}
+interface RingVideoChunk {
+  bytes: Uint8Array;
+  timestamp: number;
+  mimeType: string;
+}
 
 let ringConfig: RingConfig = DEFAULT_RING_CONFIG;
 let ringActive = false;
@@ -144,67 +163,71 @@ export default defineBackground(async () => {
   await initState();
   await sweepOrphanedOpfsFiles();
 
-  debuggerBridge = registerDebuggerBackgroundListeners(async (tabId, rawEvents) => {
-    type RawEvent = { kind?: string; actionType?: string; metadata?: { mode?: string } };
-    const events = rawEvents as RawEvent[];
+  debuggerBridge = registerDebuggerBackgroundListeners(
+    async (tabId, rawEvents) => {
+      type RawEvent = { kind?: string; actionType?: string; metadata?: { mode?: string } };
+      const events = rawEvents as RawEvent[];
 
-    if (bgSession?.tabId === tabId) {
-      let consoleN = 0;
-      let networkN = 0;
-      let interactionsN = 0;
-      let websocketN = 0;
-      let sseN = 0;
-      let hasAutoTriggerAction = false;
-      for (const e of events) {
-        if (e.kind === "console") consoleN++;
-        else if (e.kind === "network") networkN++;
-        else if (e.kind === "websocket") websocketN++;
-        else if (e.kind === "sse") sseN++;
-        else if (e.kind === "action") {
-          interactionsN++;
-          if (
-            e.actionType === "click" ||
-            e.actionType === "change" ||
-            (e.actionType === "navigation" && e.metadata?.mode !== "initial")
-          ) {
-            hasAutoTriggerAction = true;
+      if (bgSession?.tabId === tabId) {
+        let consoleN = 0;
+        let networkN = 0;
+        let interactionsN = 0;
+        let websocketN = 0;
+        let sseN = 0;
+        let hasAutoTriggerAction = false;
+        for (const e of events) {
+          if (e.kind === "console") consoleN++;
+          else if (e.kind === "network") networkN++;
+          else if (e.kind === "websocket") websocketN++;
+          else if (e.kind === "sse") sseN++;
+          else if (e.kind === "action") {
+            interactionsN++;
+            if (
+              e.actionType === "click" ||
+              e.actionType === "change" ||
+              (e.actionType === "navigation" && e.metadata?.mode !== "initial")
+            ) {
+              hasAutoTriggerAction = true;
+            }
           }
         }
-      }
-      if (consoleN > 0) bumpCount("console", consoleN);
-      if (networkN > 0) bumpCount("network", networkN);
-      if (websocketN > 0) bumpCount("websocket", websocketN);
-      if (sseN > 0) bumpCount("sse", sseN);
-      if (interactionsN > 0) bumpCount("interactions", interactionsN);
+        if (consoleN > 0) bumpCount("console", consoleN);
+        if (networkN > 0) bumpCount("network", networkN);
+        if (websocketN > 0) bumpCount("websocket", websocketN);
+        if (sseN > 0) bumpCount("sse", sseN);
+        if (interactionsN > 0) bumpCount("interactions", interactionsN);
 
-      if (hasAutoTriggerAction) {
-        if (bgSession.captureConfig.autoScreenshotOnInteraction) {
-          if (autoSsTimer) clearTimeout(autoSsTimer);
-          autoSsTimer = setTimeout(() => {
-            autoSsTimer = null;
-            void captureAutoScreenshot(tabId);
-          }, INTERACTION_CAPTURE_DEBOUNCE_MS);
-        }
+        if (hasAutoTriggerAction) {
+          if (bgSession.captureConfig.autoScreenshotOnInteraction) {
+            if (autoSsTimer) clearTimeout(autoSsTimer);
+            autoSsTimer = setTimeout(() => {
+              autoSsTimer = null;
+              void captureAutoScreenshot(tabId);
+            }, INTERACTION_CAPTURE_DEBOUNCE_MS);
+          }
 
-        if (bgSession.captureConfig.autoDomSnapshotOnInteraction) {
-          if (autoDomTimer) clearTimeout(autoDomTimer);
-          autoDomTimer = setTimeout(() => {
-            autoDomTimer = null;
-            void captureAutoDomSnapshot(tabId);
-          }, INTERACTION_CAPTURE_DEBOUNCE_MS);
+          if (bgSession.captureConfig.autoDomSnapshotOnInteraction) {
+            if (autoDomTimer) clearTimeout(autoDomTimer);
+            autoDomTimer = setTimeout(() => {
+              autoDomTimer = null;
+              void captureAutoDomSnapshot(tabId);
+            }, INTERACTION_CAPTURE_DEBOUNCE_MS);
+          }
+        }
+      } else if (ringActive && ringTabId === tabId) {
+        pruneRingBuffer();
+        const now = Date.now();
+        for (const ev of events) {
+          const timestamped = { timestamp: now, event: ev };
+          if (ev.kind === "console") ringConsoleEvents.push(timestamped);
+          else if (ev.kind === "network" || ev.kind === "websocket" || ev.kind === "sse")
+            ringNetworkEvents.push(timestamped);
+          else if (ev.kind === "action") ringInteractionEvents.push(timestamped);
         }
       }
-    } else if (ringActive && ringTabId === tabId) {
-      pruneRingBuffer();
-      const now = Date.now();
-      for (const ev of events) {
-        const timestamped = { timestamp: now, event: ev };
-        if (ev.kind === "console") ringConsoleEvents.push(timestamped);
-        else if (ev.kind === "network" || ev.kind === "websocket" || ev.kind === "sse") ringNetworkEvents.push(timestamped);
-        else if (ev.kind === "action") ringInteractionEvents.push(timestamped);
-      }
-    }
-  }, (tabId) => bgSession?.tabId === tabId || (ringActive && ringTabId === tabId));
+    },
+    (tabId) => bgSession?.tabId === tabId || (ringActive && ringTabId === tabId)
+  );
 
   chrome.runtime.onMessage.addListener((message: BgMessage, _sender, sendResponse) => {
     if (isDebuggerRuntimeMessage(message)) return;
@@ -280,7 +303,7 @@ async function handleMessage(message: BgMessage) {
       return ok(await getSettings());
 
     case "save-settings":
-      await saveSettings(message.captureConfig, message.networkFilter);
+      await saveSettings(message.captureConfig, message.networkFilter, message.videoConfig);
       return ok(undefined);
 
     case "start-session": {
@@ -395,8 +418,17 @@ async function handleMessage(message: BgMessage) {
             void persistSession();
             bumpCount("screenshots");
           } else {
-            // Standalone screenshot — temporary session storage, open recorder to annotate
-            await appendScreenshot(dataUrl);
+            // Standalone screenshot — write to OPFS with a slug-based name, store
+            // the filename (not the data URL) in session storage to stay well under
+            // the 10 MB chrome.storage.session quota.
+            const slug = slugify(`screenshot-${toFilenameTimestamp(new Date())}`);
+            const ssFilename = standaloneScreenshotOpfsFilename(slug);
+            const base64 = dataUrl.split(",")[1] ?? "";
+            await writeToOpfs(
+              ssFilename,
+              Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+            );
+            await appendStandaloneScreenshotFilename(ssFilename);
             await chrome.tabs.create({
               url: chrome.runtime.getURL("/recorder.html?mode=screenshot"),
               openerTabId: tabId,
@@ -544,7 +576,9 @@ async function captureAutoDomSnapshot(tabId: number): Promise<void> {
 async function startVideoCapture(tabId: number, session: Session): Promise<void> {
   if (!("tabCapture" in chrome) || !("offscreen" in chrome)) return;
 
-  const filename = `${OPFS_PREFIX}recording-${session.id}.webm`;
+  const { videoConfig } = await getSettings();
+  const ext = videoConfig.format === "h264" ? ".mp4" : ".webm";
+  const filename = `${OPFS_PREFIX}recording-${session.id}${ext}`;
   session.videoOpfsFilename = filename;
   await persistSession();
 
@@ -576,7 +610,12 @@ async function startVideoCapture(tabId: number, session: Session): Promise<void>
     return;
   }
 
-  await chrome.runtime.sendMessage({ type: "offscreen-start-recording", streamId, filename });
+  await chrome.runtime.sendMessage({
+    type: "offscreen-start-recording",
+    streamId,
+    filename,
+    videoConfig,
+  });
 }
 
 async function stopVideoCapture(): Promise<void> {
@@ -625,7 +664,9 @@ async function handleOffscreenMessage(msg: OffscreenMsg): Promise<void> {
 async function sweepOrphanedOpfsFiles(): Promise<void> {
   try {
     const sess = bgSession;
+    const standaloneScreenshots = await getStandaloneScreenshotFilenames();
     const activeFiles = new Set<string>([
+      ...standaloneScreenshots,
       ...(sess?.screenshotFilenames ?? []),
       ...(sess?.videoOpfsFilename ? [sess.videoOpfsFilename] : []),
       ...(sess ? sess.domSnapshotKeys.map((k) => domSnapshotOpfsFilename(sess.id, k)) : []),
@@ -678,7 +719,7 @@ function getRingStatus(): RingStatus {
 
 async function startRingVideoCapture(tabId: number): Promise<void> {
   if (!("tabCapture" in chrome) || !("offscreen" in chrome)) return;
-  if (bgSession && bgSession.captureConfig.video && bgSession.status !== "stopping") return;
+  if (bgSession?.captureConfig.video && bgSession.status !== "stopping") return;
 
   let streamId: string;
   try {
@@ -704,8 +745,9 @@ async function startRingVideoCapture(tabId: number): Promise<void> {
     return;
   }
 
+  const { videoConfig } = await getSettings();
   ringVideoActive = true;
-  await chrome.runtime.sendMessage({ type: "offscreen-start-ring", streamId });
+  await chrome.runtime.sendMessage({ type: "offscreen-start-ring", streamId, videoConfig });
 }
 
 async function stopRingVideoCapture(): Promise<void> {

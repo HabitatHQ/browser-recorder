@@ -8,6 +8,7 @@ export interface CaptureConfig {
   autoScreenshotOnInteraction: boolean;
   autoDomSnapshotOnInteraction: boolean;
   zipFolderNesting: boolean;
+  zipTitleFilename: boolean;
 }
 
 export interface NetworkFilterConfig {
@@ -21,6 +22,16 @@ export interface NetworkFilterConfig {
   customRedactedHeaders: string[];
 }
 
+export type VideoResolution = "720p" | "1080p" | "native";
+export type VideoFormat = "auto" | "vp9" | "vp8" | "av1" | "h264";
+
+export interface VideoConfig {
+  resolution: VideoResolution;
+  frameRate: number; // fps
+  bitrate: number; // kbps
+  format: VideoFormat;
+}
+
 export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   console: true,
   network: true,
@@ -31,6 +42,7 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   autoScreenshotOnInteraction: false,
   autoDomSnapshotOnInteraction: false,
   zipFolderNesting: true,
+  zipTitleFilename: false,
 };
 
 export const DEFAULT_NETWORK_FILTER: NetworkFilterConfig = {
@@ -42,6 +54,13 @@ export const DEFAULT_NETWORK_FILTER: NetworkFilterConfig = {
   redactAuthHeader: false,
   redactCookieHeader: false,
   customRedactedHeaders: [],
+};
+
+export const DEFAULT_VIDEO_CONFIG: VideoConfig = {
+  resolution: "720p",
+  frameRate: 30,
+  bitrate: 1500,
+  format: "auto",
 };
 
 export interface ScreenshotEntry {
@@ -124,7 +143,12 @@ export type BgMessage =
   | { type: "snapshot-dom" }
   | { type: "get-counts" }
   | { type: "get-settings" }
-  | { type: "save-settings"; captureConfig: CaptureConfig; networkFilter: NetworkFilterConfig }
+  | {
+      type: "save-settings";
+      captureConfig: CaptureConfig;
+      networkFilter: NetworkFilterConfig;
+      videoConfig: VideoConfig;
+    }
   | { type: "get-ring-status" }
   | { type: "toggle-ring"; enabled: boolean }
   | { type: "export-ring" }
