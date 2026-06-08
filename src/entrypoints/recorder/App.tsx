@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { MicButton } from "@/components/voice-input";
 import { sendDebuggerMessage } from "@/lib/bug-report-debugger/messaging";
 import { exportReportAsZip } from "@/lib/export";
 import { sendToBackground } from "@/lib/messaging";
@@ -757,7 +758,13 @@ export default function App() {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="description">Description</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="description">Description</Label>
+                  <MicButton
+                    value={formValues.description}
+                    onChange={(v) => setFormValues((fv) => ({ ...fv, description: v }))}
+                  />
+                </div>
                 <Textarea
                   id="description"
                   rows={3}
@@ -768,12 +775,18 @@ export default function App() {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="notes">
-                  Notes
-                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
-                    steps, hypotheses
-                  </span>
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="notes">
+                    Notes
+                    <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                      steps, hypotheses
+                    </span>
+                  </Label>
+                  <MicButton
+                    value={formValues.notes}
+                    onChange={(v) => setFormValues((fv) => ({ ...fv, notes: v }))}
+                  />
+                </div>
                 <Textarea
                   id="notes"
                   rows={3}
