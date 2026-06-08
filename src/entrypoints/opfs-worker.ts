@@ -35,12 +35,14 @@ export default defineUnlistedScript(() => {
             } satisfies WorkerReply);
             break;
           }
-          const bytes = new Uint8Array(msg.chunk);
-          handle.write(bytes, { at: offset });
-          offset += bytes.byteLength;
+          // msg.chunk is a transferred ArrayBuffer — write directly without wrapping
+          // in Uint8Array to avoid an unnecessary allocation per chunk.
+          const byteLength = msg.chunk.byteLength;
+          handle.write(msg.chunk, { at: offset });
+          offset += byteLength;
           (self as unknown as Worker).postMessage({
             type: "written",
-            bytes: bytes.byteLength,
+            bytes: byteLength,
           } satisfies WorkerReply);
           break;
         }

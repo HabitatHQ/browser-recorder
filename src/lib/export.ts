@@ -46,23 +46,51 @@ export interface ExportInput {
     interactions: unknown[];
   };
   nestInFolder?: boolean;
+  zipTitleFilename?: boolean;
 }
 
 function pad(n: number, len = 2): string {
   return String(n).padStart(len, "0");
 }
 
-function toFilenameTimestamp(d: Date): string {
+export function toFilenameTimestamp(d: Date): string {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
 }
 
-function slugify(text: string, maxLen = 40): string {
+export function slugify(text: string, maxLen = 40): string {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, maxLen)
     .replace(/-+$/, "");
+}
+
+/** Shared base-name logic used by the zip export and video/screenshot downloads. */
+export function computeExportBaseName(
+  formValues: Pick<SubmitFormValues, "title">,
+  session: Session | null,
+  zipTitleFilename: boolean,
+  now: Date
+): string {
+  if (zipTitleFilename) {
+    const s = slugify(formValues.title);
+    return s || `browser-recording-${toFilenameTimestamp(now)}`;
+  }
+  const rawSlug =
+    formValues.title && formValues.title !== "Bug report"
+      ? formValues.title
+      : session?.tabUrl
+        ? (() => {
+            try {
+              return new URL(session.tabUrl).hostname;
+            } catch {
+              return "";
+            }
+          })()
+        : "";
+  const slug = slugify(rawSlug);
+  return `browser-recording${slug ? `-${slug}` : ""}-${toFilenameTimestamp(now)}`;
 }
 
 function encode(text: string): Uint8Array {
@@ -104,6 +132,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
     domSnapshots,
     debuggerEvents,
     nestInFolder = true,
+    zipTitleFilename = false,
   } = input;
 
   let extensions: Array<{ name: string; version: string; enabled: boolean }> = [];
@@ -139,20 +168,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
   }
 
   const now = new Date();
-  const rawSlug =
-    formValues.title && formValues.title !== "Bug report"
-      ? formValues.title
-      : session?.tabUrl
-        ? (() => {
-            try {
-              return new URL(session.tabUrl).hostname;
-            } catch {
-              return "";
-            }
-          })()
-        : "";
-  const slug = slugify(rawSlug);
-  const baseName = `browser-recording${slug ? `-${slug}` : ""}-${toFilenameTimestamp(now)}`;
+  const baseName = computeExportBaseName(formValues, session, zipTitleFilename, now);
   const filename = `${baseName}.zip`;
   const prefix = nestInFolder ? `${baseName}/` : "";
 

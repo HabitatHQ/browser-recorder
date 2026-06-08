@@ -1,7 +1,44 @@
 // Offscreen document — manages MediaRecorder and OPFS worker for tab video capture
 
+import type { VideoConfig } from "@/lib/types";
+
 const WARN_BYTES = 100 * 1024 * 1024; // 100 MB
 const STOP_BYTES = 500 * 1024 * 1024; // 500 MB
+
+// Codec MIME types ordered from most to least preferred per format selection.
+const FORMAT_CANDIDATES: Record<VideoConfig["format"], string[]> = {
+  auto: ["video/webm;codecs=vp9", "video/webm"],
+  vp9: ["video/webm;codecs=vp9", "video/webm"],
+  vp8: ["video/webm;codecs=vp8", "video/webm"],
+  av1: ["video/webm;codecs=av1", "video/webm;codecs=vp9", "video/webm"],
+  h264: ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"],
+};
+
+function resolveMimeType(format: VideoConfig["format"]): string {
+  const candidates = FORMAT_CANDIDATES[format];
+  return candidates.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
+}
+
+function buildStreamConstraints(streamId: string, config: VideoConfig): MediaStreamConstraints {
+  const mandatory: Record<string, unknown> = {
+    chromeMediaSource: "tab",
+    chromeMediaSourceId: streamId,
+    maxFrameRate: config.frameRate,
+  };
+  if (config.resolution === "720p") {
+    mandatory.maxWidth = 1280;
+    mandatory.maxHeight = 720;
+  } else if (config.resolution === "1080p") {
+    mandatory.maxWidth = 1920;
+    mandatory.maxHeight = 1080;
+  }
+  // "native" — no width/height cap; only frameRate is constrained
+  return {
+    audio: false,
+    // @ts-expect-error chromeMediaSource/mandatory not in standard DOM types
+    video: { mandatory },
+  };
+}
 
 type WorkerReply =
   | { type: "ready" }
@@ -17,15 +54,24 @@ let warnedAt100MB = false;
 let ringRecorder: MediaRecorder | null = null;
 
 chrome.runtime.onMessage.addListener(
-  (message: { type: string; streamId?: string; filename?: string }) => {
+  (message: {
+    type: string;
+    streamId?: string;
+    filename?: string;
+    videoConfig?: VideoConfig;
+  }) => {
     if (message.type === "offscreen-start-recording" && message.streamId && message.filename) {
-      startRecording(message.streamId, message.filename).catch((err: unknown) => {
+      const cfg = message.videoConfig;
+      if (!cfg) return false;
+      startRecording(message.streamId, message.filename, cfg).catch((err: unknown) => {
         chrome.runtime.sendMessage({ type: "offscreen-error", message: String(err) });
       });
     } else if (message.type === "offscreen-stop-recording") {
       stopRecording();
     } else if (message.type === "offscreen-start-ring" && message.streamId) {
-      startRingRecording(message.streamId).catch((err: unknown) => {
+      const cfg = message.videoConfig;
+      if (!cfg) return false;
+      startRingRecording(message.streamId, cfg).catch((err: unknown) => {
         chrome.runtime.sendMessage({ type: "offscreen-error", message: String(err) });
       });
     } else if (message.type === "offscreen-stop-ring") {
@@ -35,18 +81,14 @@ chrome.runtime.onMessage.addListener(
   }
 );
 
-async function startRecording(streamId: string, filename: string): Promise<void> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      // Chrome-specific tabCapture constraint — not in standard TS DOM types
-      // @ts-expect-error
-      mandatory: {
-        chromeMediaSource: "tab",
-        chromeMediaSourceId: streamId,
-      },
-    },
-  });
+async function startRecording(
+  streamId: string,
+  filename: string,
+  videoConfig: VideoConfig
+): Promise<void> {
+  const stream = await navigator.mediaDevices.getUserMedia(
+    buildStreamConstraints(streamId, videoConfig)
+  );
 
   opfsWorker = new Worker(chrome.runtime.getURL("opfs-worker.js"));
   opfsWorker.postMessage({ type: "init", filename });
@@ -83,13 +125,11 @@ async function startRecording(streamId: string, filename: string): Promise<void>
     }
   };
 
-  const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-    ? "video/webm;codecs=vp9"
-    : "video/webm";
+  const mimeType = resolveMimeType(videoConfig.format);
 
   recorder = new MediaRecorder(stream, {
-    mimeType,
-    videoBitsPerSecond: 2_000_000,
+    ...(mimeType ? { mimeType } : {}),
+    videoBitsPerSecond: videoConfig.bitrate * 1000,
   });
 
   recorder.ondataavailable = (e) => {
@@ -104,7 +144,7 @@ async function startRecording(streamId: string, filename: string): Promise<void>
     opfsWorker?.postMessage({ type: "finalize" });
   };
 
-  recorder.start(5_000); // 5s timeslices keep memory bounded
+  recorder.start(5_000);
   chrome.runtime.sendMessage({ type: "offscreen-ready" });
 }
 
@@ -115,23 +155,17 @@ function stopRecording(): void {
   }
 }
 
-async function startRingRecording(streamId: string): Promise<void> {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: false,
-    video: {
-      // @ts-expect-error
-      mandatory: {
-        chromeMediaSource: "tab",
-        chromeMediaSourceId: streamId,
-      },
-    },
+async function startRingRecording(streamId: string, videoConfig: VideoConfig): Promise<void> {
+  const stream = await navigator.mediaDevices.getUserMedia(
+    buildStreamConstraints(streamId, videoConfig)
+  );
+
+  const mimeType = resolveMimeType(videoConfig.format);
+
+  ringRecorder = new MediaRecorder(stream, {
+    ...(mimeType ? { mimeType } : {}),
+    videoBitsPerSecond: videoConfig.bitrate * 1000,
   });
-
-  const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-    ? "video/webm;codecs=vp9"
-    : "video/webm";
-
-  ringRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 });
 
   ringRecorder.ondataavailable = (e) => {
     if (e.data.size === 0) return;
@@ -146,7 +180,8 @@ async function startRingRecording(streamId: string): Promise<void> {
     ringRecorder = null;
   };
 
-  ringRecorder.start(2_000);
+  // 5s timeslices — matches regular recording, halves IPC message rate vs 2s
+  ringRecorder.start(5_000);
 }
 
 function stopRingRecording(): void {

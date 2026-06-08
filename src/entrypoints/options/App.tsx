@@ -10,10 +10,29 @@ import {
   DEFAULT_CAPTURE_CONFIG,
   DEFAULT_NETWORK_FILTER,
   DEFAULT_RING_CONFIG,
+  DEFAULT_VIDEO_CONFIG,
   type NetworkFilterConfig,
   type RingConfig,
+  type VideoConfig,
+  type VideoFormat,
 } from "@/lib/types";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+// Maps each explicit format to its probe MIME type
+const FORMAT_MIME: Record<Exclude<VideoFormat, "auto">, string> = {
+  vp9: "video/webm;codecs=vp9",
+  vp8: "video/webm;codecs=vp8",
+  av1: "video/webm;codecs=av1",
+  h264: "video/mp4;codecs=avc1",
+};
+
+const FORMAT_LABELS: Record<VideoFormat, string> = {
+  auto: "Auto (VP9)",
+  vp9: "VP9 — WebM",
+  vp8: "VP8 — WebM (faster encode)",
+  av1: "AV1 — WebM (smaller, slow encode)",
+  h264: "H.264 — MP4",
+};
 
 function InfoTooltip({ text }: { text: string }) {
   return (
@@ -32,6 +51,7 @@ function InfoTooltip({ text }: { text: string }) {
 export default function App() {
   const [captureConfig, setCaptureConfig] = useState<CaptureConfig>(DEFAULT_CAPTURE_CONFIG);
   const [networkFilter, setNetworkFilter] = useState<NetworkFilterConfig>(DEFAULT_NETWORK_FILTER);
+  const [videoConfig, setVideoConfig] = useState<VideoConfig>(DEFAULT_VIDEO_CONFIG);
   const [ringConfig, setRingConfig] = useState<RingConfig>(DEFAULT_RING_CONFIG);
   const [exclusionText, setExclusionText] = useState("");
   const [customHeadersText, setCustomHeadersText] = useState("");
@@ -39,13 +59,25 @@ export default function App() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Formats supported by MediaRecorder in this browser context
+  const supportedFormats = useMemo<VideoFormat[]>(() => {
+    if (typeof MediaRecorder === "undefined") return ["auto"];
+    return (["auto", "vp9", "vp8", "av1", "h264"] as VideoFormat[]).filter((f) => {
+      if (f === "auto") return true;
+      return MediaRecorder.isTypeSupported(FORMAT_MIME[f]);
+    });
+  }, []);
+
   useEffect(() => {
-    sendToBackground<{ captureConfig: CaptureConfig; networkFilter: NetworkFilterConfig }>({
-      type: "get-settings",
-    })
-      .then(({ captureConfig: cc, networkFilter: nf }) => {
+    sendToBackground<{
+      captureConfig: CaptureConfig;
+      networkFilter: NetworkFilterConfig;
+      videoConfig: VideoConfig;
+    }>({ type: "get-settings" })
+      .then(({ captureConfig: cc, networkFilter: nf, videoConfig: vc }) => {
         setCaptureConfig(cc);
         setNetworkFilter(nf);
+        setVideoConfig(vc);
         setExclusionText(nf.exclusionPatterns.join("\n"));
         setCustomHeadersText(nf.customRedactedHeaders.join("\n"));
       })
@@ -90,7 +122,12 @@ export default function App() {
         exclusionPatterns: patterns,
         customRedactedHeaders: customHeaders,
       };
-      await sendToBackground({ type: "save-settings", captureConfig, networkFilter: finalFilter });
+      await sendToBackground({
+        type: "save-settings",
+        captureConfig,
+        networkFilter: finalFilter,
+        videoConfig,
+      });
       await sendToBackground({ type: "save-ring-config", ringConfig });
       setSaved(true);
       setIsDirty(false);
@@ -452,6 +489,137 @@ export default function App() {
                 checked={captureConfig.zipFolderNesting}
                 onChange={() => toggleCapture("zipFolderNesting")}
               />
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-title-filename" className="font-medium">
+                    Use title as filename
+                  </Label>
+                  <InfoTooltip text="Names the exported zip after the report title slug (e.g. login-flow-broken.zip) instead of the default browser-recording-<host>-<timestamp>.zip. Off by default." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Off: browser-recording-&lt;host&gt;-&lt;timestamp&gt;.zip
+                </p>
+              </div>
+              <Switch
+                id="opt-title-filename"
+                checked={captureConfig.zipTitleFilename}
+                onChange={() => toggleCapture("zipTitleFilename")}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-6">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Video recording
+          </h2>
+          <Separator className="mb-4" />
+
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5">
+                  <Label className="font-medium">Resolution</Label>
+                  <InfoTooltip text="Caps the capture resolution sent to the encoder. 720p significantly reduces CPU usage and file size with little perceptible quality loss for screen recordings. 'Native' passes through whatever resolution the tab is rendered at." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">Max capture resolution</p>
+              </div>
+              <select
+                className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={videoConfig.resolution}
+                onChange={(e) => {
+                  setVideoConfig((v) => ({
+                    ...v,
+                    resolution: e.target.value as VideoConfig["resolution"],
+                  }));
+                  setIsDirty(true);
+                }}
+              >
+                <option value="720p">720p — 1280×720</option>
+                <option value="1080p">1080p — 1920×1080</option>
+                <option value="native">Native (no cap)</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5">
+                  <Label className="font-medium">Frame rate</Label>
+                  <InfoTooltip text="Maximum frames per second captured. 30 fps is more than sufficient for most UI recordings. 15 fps cuts CPU and bitrate roughly in half again." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">Max frames per second</p>
+              </div>
+              <select
+                className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={videoConfig.frameRate}
+                onChange={(e) => {
+                  setVideoConfig((v) => ({ ...v, frameRate: Number(e.target.value) }));
+                  setIsDirty(true);
+                }}
+              >
+                <option value={15}>15 fps</option>
+                <option value={24}>24 fps</option>
+                <option value={30}>30 fps</option>
+                <option value={60}>60 fps</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5">
+                  <Label className="font-medium">Bitrate</Label>
+                  <InfoTooltip text="Target encoding bitrate. 1.5 Mbps is the default and produces clear recordings at 720p/30fps. Higher values improve quality for fast-moving content; lower values reduce file size." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">Target encoding bitrate</p>
+              </div>
+              <select
+                className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={videoConfig.bitrate}
+                onChange={(e) => {
+                  setVideoConfig((v) => ({ ...v, bitrate: Number(e.target.value) }));
+                  setIsDirty(true);
+                }}
+              >
+                <option value={500}>500 kbps</option>
+                <option value={750}>750 kbps</option>
+                <option value={1000}>1 Mbps</option>
+                <option value={1500}>1.5 Mbps</option>
+                <option value={2000}>2 Mbps</option>
+                <option value={3000}>3 Mbps</option>
+                <option value={4000}>4 Mbps</option>
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5">
+                  <Label className="font-medium">Format</Label>
+                  <InfoTooltip text="Codec and container. Auto picks VP9/WebM which works everywhere. VP8 encodes faster with slightly larger files. AV1 is more efficient but CPU-intensive. H.264/MP4 is supported on Chrome 130+ and plays natively in most video players." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Only formats supported by this browser are shown
+                </p>
+              </div>
+              <select
+                className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={videoConfig.format}
+                onChange={(e) => {
+                  setVideoConfig((v) => ({
+                    ...v,
+                    format: e.target.value as VideoConfig["format"],
+                  }));
+                  setIsDirty(true);
+                }}
+              >
+                {supportedFormats.map((f) => (
+                  <option key={f} value={f}>
+                    {FORMAT_LABELS[f]}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         </section>

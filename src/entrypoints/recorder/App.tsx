@@ -7,7 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { MicButton } from "@/components/voice-input";
 import { sendDebuggerMessage } from "@/lib/bug-report-debugger/messaging";
-import { exportReportAsZip } from "@/lib/export";
+import { computeExportBaseName, exportReportAsZip } from "@/lib/export";
 import { sendToBackground } from "@/lib/messaging";
 import { domSnapshotOpfsFilename } from "@/lib/storage";
 import {
@@ -178,13 +178,29 @@ export default function App() {
         }
 
         if (mode === "screenshot") {
-          const ssResult = (await chrome.storage.session.get("screenshots")) as {
-            screenshots?: string[];
+          const ssResult = (await chrome.storage.session.get("screenshotFilenames")) as {
+            screenshotFilenames?: string[];
           };
-          const dataUrls = ssResult.screenshots ?? [];
-          setScreenshots(dataUrls.map((dataUrl) => ({ dataUrl, annotatedBlob: null })));
-          if (dataUrls.length > 0) {
-            setAnnotatingIndex(dataUrls.length - 1);
+          const filenames = ssResult.screenshotFilenames ?? [];
+          const opfsDir = await navigator.storage.getDirectory();
+          const entries = await Promise.all(
+            filenames.map(async (fn): Promise<ScreenshotEntry | null> => {
+              try {
+                const handle = await opfsDir.getFileHandle(fn);
+                const file = await handle.getFile();
+                const dataUrl = await fileToDataUrl(file);
+                await opfsDir.removeEntry(fn).catch(() => {});
+                return { dataUrl, annotatedBlob: null };
+              } catch {
+                return null;
+              }
+            })
+          );
+          await chrome.storage.session.remove("screenshotFilenames");
+          const loaded = entries.filter((e): e is ScreenshotEntry => e !== null);
+          setScreenshots(loaded);
+          if (loaded.length > 0) {
+            setAnnotatingIndex(loaded.length - 1);
             setState("annotating");
           } else {
             setState("form");
@@ -350,6 +366,7 @@ export default function App() {
         domSnapshots,
         debuggerEvents,
         nestInFolder: exportConfig.zipFolderNesting,
+        zipTitleFilename: exportConfig.zipTitleFilename,
       });
       setExportFilename(filename);
       if (modeRef.current === "ring") {
@@ -371,13 +388,24 @@ export default function App() {
     if (!filename) return;
     setVideoDownloading(true);
     try {
+      const { captureConfig: dlConfig } = await sendToBackground<{
+        captureConfig: CaptureConfig;
+        networkFilter: NetworkFilterConfig;
+      }>({ type: "get-settings" });
+      const ext = filename.endsWith(".mp4") ? ".mp4" : ".webm";
+      const baseName = computeExportBaseName(
+        formValues,
+        session,
+        dlConfig.zipTitleFilename,
+        new Date()
+      );
       const dir = await navigator.storage.getDirectory();
       const fileHandle = await dir.getFileHandle(filename);
       const file = await fileHandle.getFile();
       const url = URL.createObjectURL(file);
       const a = document.createElement("a");
       a.href = url;
-      a.download = filename;
+      a.download = `${baseName}${ext}`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
     } catch {

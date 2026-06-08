@@ -3,11 +3,13 @@ import {
   DEFAULT_CAPTURE_CONFIG,
   DEFAULT_NETWORK_FILTER,
   DEFAULT_RING_CONFIG,
+  DEFAULT_VIDEO_CONFIG,
   type NetworkFilterConfig,
   type RingConfig,
   type RingSnapshot,
   type Session,
   type SessionCounts,
+  type VideoConfig,
 } from "./types";
 
 // Shared OPFS prefix — all extension-owned OPFS files use this to avoid
@@ -22,12 +24,20 @@ export function domSnapshotOpfsFilename(sessionId: string, key: string): string 
   return `${OPFS_PREFIX}dom-${sessionId}-${key}.html`;
 }
 
+// Standalone screenshot OPFS filename — uses the same slug-based convention as
+// the zip export so the user sees a consistent name if they inspect the file.
+export function standaloneScreenshotOpfsFilename(slug: string): string {
+  return `${OPFS_PREFIX}screenshot-${slug}.png`;
+}
+
 const KEYS = {
   session: "session",
   counts: "counts",
   captureConfig: "captureConfig",
   networkFilter: "networkFilter",
-  screenshots: "screenshots", // string[] — base64 data URLs for standalone (non-session) screenshots only
+  videoConfig: "videoConfig",
+  // OPFS filenames for standalone (non-session) screenshots
+  screenshotFilenames: "screenshotFilenames",
   ringConfig: "ringConfig",
   ringSnapshot: "ringSnapshot",
 } as const;
@@ -40,7 +50,7 @@ export async function getSession(): Promise<Session | null> {
 
 export async function setSession(session: Session | null): Promise<void> {
   if (session === null) {
-    await chrome.storage.session.remove([KEYS.session, KEYS.counts, KEYS.screenshots]);
+    await chrome.storage.session.remove([KEYS.session, KEYS.counts, KEYS.screenshotFilenames]);
   } else {
     await chrome.storage.session.set({ [KEYS.session]: session });
   }
@@ -66,23 +76,29 @@ export async function saveCounts(counts: SessionCounts): Promise<void> {
   await chrome.storage.session.set({ [KEYS.counts]: counts });
 }
 
-// Standalone (non-session) screenshots only — session screenshots use OPFS
-export async function appendScreenshot(dataUrl: string): Promise<void> {
-  const existing = await getScreenshots();
-  await chrome.storage.session.set({ [KEYS.screenshots]: [...existing, dataUrl] });
+// Standalone (non-session) screenshots — stored as OPFS filenames, not data URLs,
+// to stay within chrome.storage.session's 10 MB quota.
+export async function appendStandaloneScreenshotFilename(filename: string): Promise<void> {
+  const existing = await getStandaloneScreenshotFilenames();
+  await chrome.storage.session.set({ [KEYS.screenshotFilenames]: [...existing, filename] });
 }
 
-export async function getScreenshots(): Promise<string[]> {
-  const result = await chrome.storage.session.get(KEYS.screenshots);
-  return (result[KEYS.screenshots] as string[] | undefined) ?? [];
+export async function getStandaloneScreenshotFilenames(): Promise<string[]> {
+  const result = await chrome.storage.session.get(KEYS.screenshotFilenames);
+  return (result[KEYS.screenshotFilenames] as string[] | undefined) ?? [];
 }
 
 // Settings live in chrome.storage.local (persistent)
 export async function getSettings(): Promise<{
   captureConfig: CaptureConfig;
   networkFilter: NetworkFilterConfig;
+  videoConfig: VideoConfig;
 }> {
-  const result = await chrome.storage.local.get([KEYS.captureConfig, KEYS.networkFilter]);
+  const result = await chrome.storage.local.get([
+    KEYS.captureConfig,
+    KEYS.networkFilter,
+    KEYS.videoConfig,
+  ]);
   return {
     captureConfig: {
       ...DEFAULT_CAPTURE_CONFIG,
@@ -92,16 +108,22 @@ export async function getSettings(): Promise<{
       ...DEFAULT_NETWORK_FILTER,
       ...(result[KEYS.networkFilter] as NetworkFilterConfig | undefined),
     },
+    videoConfig: {
+      ...DEFAULT_VIDEO_CONFIG,
+      ...(result[KEYS.videoConfig] as VideoConfig | undefined),
+    },
   };
 }
 
 export async function saveSettings(
   captureConfig: CaptureConfig,
-  networkFilter: NetworkFilterConfig
+  networkFilter: NetworkFilterConfig,
+  videoConfig: VideoConfig
 ): Promise<void> {
   await chrome.storage.local.set({
     [KEYS.captureConfig]: captureConfig,
     [KEYS.networkFilter]: networkFilter,
+    [KEYS.videoConfig]: videoConfig,
   });
 }
 
