@@ -7,6 +7,7 @@ export interface CaptureConfig {
   fullSelectorPath: boolean;
   autoScreenshotOnInteraction: boolean;
   autoDomSnapshotOnInteraction: boolean;
+  zipFolderNesting: boolean;
 }
 
 export interface NetworkFilterConfig {
@@ -29,6 +30,7 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   fullSelectorPath: true,
   autoScreenshotOnInteraction: false,
   autoDomSnapshotOnInteraction: false,
+  zipFolderNesting: true,
 };
 
 export const DEFAULT_NETWORK_FILTER: NetworkFilterConfig = {

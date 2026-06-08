@@ -428,6 +428,34 @@ export default function App() {
             </div>
           </div>
         </section>
+        <section className="mb-6">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Export
+          </h2>
+          <Separator className="mb-4" />
+
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-zip-nesting" className="font-medium">
+                    Nest files in folder
+                  </Label>
+                  <InfoTooltip text="Places all files inside a named folder within the zip (e.g. browser-recording-example-com-20240101-1200/report.md). Prevents files from scattering into the current directory on extraction. On by default." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Wrap zip contents in a folder to avoid clobbering on extraction
+                </p>
+              </div>
+              <Switch
+                id="opt-zip-nesting"
+                checked={captureConfig.zipFolderNesting}
+                onChange={() => toggleCapture("zipFolderNesting")}
+              />
+            </div>
+          </div>
+        </section>
+
         <section className="mb-8">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
             Ring recording

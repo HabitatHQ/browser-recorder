@@ -10,7 +10,9 @@ import { exportReportAsZip } from "@/lib/export";
 import { sendToBackground } from "@/lib/messaging";
 import { domSnapshotOpfsFilename } from "@/lib/storage";
 import {
+  type CaptureConfig,
   DEFAULT_CAPTURE_CONFIG,
+  type NetworkFilterConfig,
   type RingSnapshot,
   type ScreenshotEntry,
   type Session,
@@ -335,6 +337,10 @@ export default function App() {
     setState("submitting");
     setExportError(null);
     try {
+      const { captureConfig: exportConfig } = await sendToBackground<{
+        captureConfig: CaptureConfig;
+        networkFilter: NetworkFilterConfig;
+      }>({ type: "get-settings" });
       const filename = await exportReportAsZip({
         session,
         counts,
@@ -342,6 +348,7 @@ export default function App() {
         screenshots,
         domSnapshots,
         debuggerEvents,
+        nestInFolder: exportConfig.zipFolderNesting,
       });
       setExportFilename(filename);
       if (modeRef.current === "ring") {
@@ -417,16 +424,17 @@ export default function App() {
           <CheckCircle2 className="h-12 w-12 text-green-500 dark:text-green-400" />
           <div>
             <p className="font-semibold text-lg">Report exported</p>
-            {exportFilename && (
-              <p className="text-sm font-medium mt-1">{exportFilename}</p>
-            )}
+            {exportFilename && <p className="text-sm font-medium mt-1">{exportFilename}</p>}
           </div>
           <div className="flex gap-2">
             <Button
               variant="outline"
               onClick={() =>
                 chrome.tabs.create({
-                  url: import.meta.env.BROWSER === "firefox" ? "about:downloads" : "chrome://downloads",
+                  url:
+                    import.meta.env.BROWSER === "firefox"
+                      ? "about:downloads"
+                      : "chrome://downloads",
                 })
               }
             >
@@ -509,7 +517,10 @@ export default function App() {
                     ? ((ev.timestamp - session.startedAt) / 1000).toFixed(1)
                     : null;
                   return (
-                    <div key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-0.5 text-xs font-mono">
+                    <div
+                      key={i}
+                      className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-0.5 text-xs font-mono"
+                    >
                       <span
                         className={cn(
                           "shrink-0 rounded px-1 text-[10px] leading-5",
@@ -542,7 +553,10 @@ export default function App() {
                     ? ((ev.timestamp - session.startedAt) / 1000).toFixed(1)
                     : null;
                   return (
-                    <div key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-0.5 text-xs font-mono">
+                    <div
+                      key={i}
+                      className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-0.5 text-xs font-mono"
+                    >
                       <span
                         className={cn(
                           "shrink-0 rounded px-1 text-[10px] leading-5",
@@ -580,7 +594,10 @@ export default function App() {
                     ? ((ev.timestamp - session.startedAt) / 1000).toFixed(1)
                     : null;
                   return (
-                    <div key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-0.5 text-xs font-mono">
+                    <div
+                      key={i}
+                      className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 py-0.5 text-xs font-mono"
+                    >
                       <span className="shrink-0 rounded px-1 text-[10px] leading-5 bg-purple-500/15 text-purple-700 dark:text-purple-400">
                         {ev.eventType ?? ev.event}
                       </span>
