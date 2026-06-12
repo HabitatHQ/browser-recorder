@@ -1,0 +1,7 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <!-- Browser Recorder mark — kept in sync with src/components/logo.tsx -->
+  <rect width="128" height="128" rx="28" fill="#0f172a"/>
+  <circle cx="64" cy="64" r="42" fill="none" stroke="#e2e8f0" stroke-width="8.5" opacity="0.28"/>
+  <circle cx="64" cy="64" r="27" fill="none" stroke="#e2e8f0" stroke-width="9" opacity="0.62"/>
+  <circle cx="64" cy="64" r="13" fill="#ef4444"/>
+</svg>

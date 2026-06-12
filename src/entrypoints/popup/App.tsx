@@ -1,3 +1,4 @@
+import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
@@ -456,7 +457,10 @@ export default function App() {
   return (
     <div className="w-[380px] bg-background text-foreground">
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
-        <span className="text-sm font-semibold tracking-tight">chrome-recorder</span>
+        <div className="flex items-center gap-2">
+          <Logo className="h-5 w-5" />
+          <span className="text-sm font-semibold tracking-tight">Browser Recorder</span>
+        </div>
         <button
           type="button"
           className="text-muted-foreground hover:text-foreground transition-colors"

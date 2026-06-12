@@ -12,6 +12,7 @@
     "zip:firefox": "wxt zip -b firefox",
     "package": "wxt zip && wxt zip -b firefox",
     "check": "tsc --noEmit",
+    "icons": "node scripts/generate-icons.mjs",
     "screenshots": "wxt build && node scripts/capture-screenshots.mjs",
     "build:cws": "./scripts/build-cws.sh",
     "publish:chrome": "./scripts/publish-chrome.sh",

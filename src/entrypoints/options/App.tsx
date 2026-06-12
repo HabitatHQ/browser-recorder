@@ -1,3 +1,4 @@
+import { Logo } from "@/components/logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -140,7 +141,10 @@ export default function App() {
   return (
     <div className="bg-background text-foreground min-h-screen pb-20">
       <div className="mx-auto max-w-2xl px-6 py-8">
-        <h1 className="text-xl font-semibold mb-6">Chrome Recorder — Settings</h1>
+        <h1 className="flex items-center gap-2.5 text-xl font-semibold mb-6">
+          <Logo className="h-7 w-7" />
+          Browser Recorder — Settings
+        </h1>
 
         <section className="mb-6">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">

@@ -83,6 +83,41 @@ async function frameForStore(context, pngBuffer) {
   return framed;
 }
 
+// Drives the recorder into its annotation view by seeding a standalone
+// screenshot (written to OPFS + session storage from an extension page, exactly
+// as the background does) and opening recorder.html?mode=screenshot.
+async function captureAnnotation(context, extId, samplePng) {
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 1120, height: 720 });
+  // Open an extension page first so chrome.* and the extension-origin OPFS are
+  // reachable, then plant the sample screenshot the recorder will pick up.
+  await page.goto(`chrome-extension://${extId}/recorder.html`, {
+    waitUntil: "domcontentloaded",
+  });
+  const b64 = samplePng.toString("base64");
+  await page.evaluate(async (data) => {
+    const filename = "chrome-recorder-screenshot-sample.png";
+    const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+    const dir = await navigator.storage.getDirectory();
+    const handle = await dir.getFileHandle(filename, { create: true });
+    const w = await handle.createWritable();
+    await w.write(bytes.buffer);
+    await w.close();
+    await chrome.storage.session.set({ screenshotFilenames: [filename] });
+  }, b64);
+
+  await page.goto(`chrome-extension://${extId}/recorder.html?mode=screenshot`, {
+    waitUntil: "networkidle",
+  });
+  await page.waitForSelector("canvas", { timeout: 15_000 }).catch(() => {
+    console.warn("  (annotation canvas not found)");
+  });
+  await page.waitForTimeout(600);
+  const shot = await page.screenshot({ type: "png" });
+  await page.close();
+  return shot;
+}
+
 async function main() {
   if (!existsSync(EXT_DIR)) {
     console.error(`Build not found at ${EXT_DIR} — run \`pnpm build\` first.`);
@@ -107,9 +142,12 @@ async function main() {
   const extId = new URL(sw.url()).host;
   console.log(`Extension ID: ${extId}`);
 
-  // Give the popup a real active tab to query.
+  // Give the popup a real active tab to query, and use its screenshot as the
+  // sample image for the annotation view.
   const seed = await context.newPage();
-  await seed.goto("https://example.com", { waitUntil: "domcontentloaded" }).catch(() => {});
+  await seed.setViewportSize({ width: 1000, height: 640 });
+  await seed.goto("https://example.com", { waitUntil: "networkidle" }).catch(() => {});
+  const samplePng = await seed.screenshot({ type: "png" }).catch(() => null);
 
   for (const shot of SHOTS) {
     const page = await context.newPage();
@@ -133,6 +171,18 @@ async function main() {
     const storeOut = resolve(STORE_DIR, `${shot.name}.png`);
     await writeFile(storeOut, framed);
     console.log(`✓ store  ${shot.name} → ${storeOut} (${STORE_W}x${STORE_H})`);
+  }
+
+  // Annotation view (needs a seeded screenshot, so it's captured separately).
+  if (samplePng) {
+    const rawAnno = await captureAnnotation(context, extId, samplePng);
+    const annoReadme = resolve(README_DIR, "annotation.png");
+    await writeFile(annoReadme, rawAnno);
+    console.log(`✓ README annotation → ${annoReadme}`);
+    const annoFramed = await frameForStore(context, rawAnno);
+    const annoStore = resolve(STORE_DIR, "annotation.png");
+    await writeFile(annoStore, annoFramed);
+    console.log(`✓ store  annotation → ${annoStore} (${STORE_W}x${STORE_H})`);
   }
 
   await context.close();
