@@ -16,7 +16,7 @@ Settings:
 
 ![Settings](docs/screenshots/options.png)
 
-Screenshots are generated from the built extension with `pnpm screenshots` (see [`scripts/capture-screenshots.mjs`](scripts/capture-screenshots.mjs)).
+Screenshots are generated from the built extension with `pnpm screenshots` (see [`scripts/capture-screenshots.mjs`](scripts/capture-screenshots.mjs)), which writes both these README crops to `docs/screenshots/` and 1280×800 store-listing images to `docs/store/`.
 
 ## Development
 
@@ -54,7 +54,7 @@ Why a separate build: the `key` in `wxt.config.ts` pins a stable extension ID fo
 The uploaded zip contains **only the extension code + manifest**. The Chrome Web Store API (`upload`/`publish`) handles the package and publish state — **nothing else**. There is no public API for listing assets, so these are managed by hand in the Developer Dashboard:
 
 - **Detailed description** — separate from the manifest `description`; edited in the dashboard.
-- **Screenshots** — 1–5 images, **1280×800** or 640×400 PNG/JPEG. (The `docs/screenshots/` PNGs in this repo are README-only and are *not* store assets — store shots need the 1280×800 framing.)
+- **Screenshots** — 1–5 images, **1280×800** or 640×400 PNG/JPEG. `pnpm screenshots` writes store-ready 1280×800 versions to `docs/store/` (drag them into the dashboard); the `docs/screenshots/` PNGs are the tighter README crops.
 - **Promo tiles** — small 440×280, optional marquee 1400×560.
 - **Store icon** — the 128×128 icon from the manifest is reused.
 - **Category, language, privacy policy URL** — dashboard fields.
