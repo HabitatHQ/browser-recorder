@@ -8,9 +8,13 @@ Download the latest release from [Releases](../../releases). See [GUIDE.md](GUID
 
 ## Screenshots
 
-| Popup | Review &amp; export |
+| Popup | Annotate |
 |---|---|
-| ![Popup](docs/screenshots/popup.png) | ![Review and export](docs/screenshots/recorder.png) |
+| ![Popup](docs/screenshots/popup.png) | ![Annotation editor](docs/screenshots/annotation.png) |
+
+Review &amp; export:
+
+![Review and export](docs/screenshots/recorder.png)
 
 Settings:
 
