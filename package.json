@@ -12,6 +12,7 @@
     "zip:firefox": "wxt zip -b firefox",
     "package": "wxt zip && wxt zip -b firefox",
     "check": "tsc --noEmit",
+    "screenshots": "wxt build && node scripts/capture-screenshots.mjs",
     "lint": "biome check src",
     "postinstall": "wxt prepare"
   },
@@ -32,6 +33,7 @@
     "@types/react": "^19.1.5",
     "@types/react-dom": "^19.1.5",
     "@wxt-dev/module-react": "^1.1.5",
+    "playwright": "^1.60.0",
     "tailwindcss": "^4.1.8",
     "typescript": "^5.8.3",
     "wxt": "^0.20.6"
