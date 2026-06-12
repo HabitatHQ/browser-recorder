@@ -208,6 +208,32 @@ export default function App() {
           return;
         }
 
+        if (mode === "snapshot") {
+          const snapResult = (await chrome.storage.session.get("domSnapshotFilenames")) as {
+            domSnapshotFilenames?: string[];
+          };
+          const filenames = snapResult.domSnapshotFilenames ?? [];
+          const opfsDir = await navigator.storage.getDirectory();
+          const snaps: Record<string, string> = {};
+          let i = 1;
+          for (const fn of filenames) {
+            try {
+              const handle = await opfsDir.getFileHandle(fn);
+              const file = await handle.getFile();
+              snaps[String(i)] = await file.text();
+              await opfsDir.removeEntry(fn).catch(() => {});
+              i++;
+            } catch {
+              // Skip unavailable snapshots
+            }
+          }
+          await chrome.storage.session.remove("domSnapshotFilenames");
+          setDomSnapshots(snaps);
+          setCounts((c) => ({ ...c, domSnapshots: Object.keys(snaps).length }));
+          setState("form");
+          return;
+        }
+
         if (mode === "ring") {
           const ringResult = (await chrome.storage.session.get("ringSnapshot")) as {
             ringSnapshot?: RingSnapshot;

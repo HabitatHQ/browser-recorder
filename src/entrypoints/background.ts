@@ -7,12 +7,14 @@ import { slugify, toFilenameTimestamp } from "@/lib/export";
 import { fail, ok } from "@/lib/messaging";
 import {
   OPFS_PREFIX,
+  appendStandaloneDomSnapshotFilename,
   appendStandaloneScreenshotFilename,
   domSnapshotOpfsFilename,
   getCounts,
   getRingConfig,
   getSession,
   getSettings,
+  getStandaloneDomSnapshotFilenames,
   getStandaloneScreenshotFilenames,
   saveCounts,
   saveRingConfig,
@@ -20,6 +22,7 @@ import {
   screenshotOpfsFilename,
   setRingSnapshot,
   setSession,
+  standaloneDomSnapshotOpfsFilename,
   standaloneScreenshotOpfsFilename,
 } from "@/lib/storage";
 import {
@@ -442,13 +445,34 @@ async function handleMessage(message: BgMessage) {
     }
 
     case "snapshot-dom": {
-      if (!bgSession) return fail("No active session");
-      const index = bgSession.domSnapshotCount + 1;
-      await captureAndStoreDomSnapshot(bgSession.tabId, String(index));
-      bgSession.domSnapshotCount = index;
-      void persistSession();
-      bumpCount("domSnapshots");
-      return ok({ index });
+      if (bgSession) {
+        const index = bgSession.domSnapshotCount + 1;
+        await captureAndStoreDomSnapshot(bgSession.tabId, String(index));
+        bgSession.domSnapshotCount = index;
+        void persistSession();
+        bumpCount("domSnapshots");
+        return ok({ index });
+      }
+
+      // Standalone DOM snapshot — no active session. Capture the current page's
+      // HTML, write it to OPFS, and open the recorder in snapshot mode to review
+      // and export it. Mirrors the standalone screenshot flow.
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id) return fail("No active tab");
+      const { id: tabId } = tab;
+      const html = await captureStandaloneDomSnapshot(tabId);
+      if (html === null) return fail("Could not capture DOM snapshot");
+      const slug = slugify(
+        `dom-${toFilenameTimestamp(new Date())}-${crypto.randomUUID().slice(0, 8)}`
+      );
+      const filename = standaloneDomSnapshotOpfsFilename(slug);
+      await writeToOpfs(filename, new TextEncoder().encode(html));
+      await appendStandaloneDomSnapshotFilename(filename);
+      await chrome.tabs.create({
+        url: chrome.runtime.getURL("/recorder.html?mode=snapshot"),
+        openerTabId: tabId,
+      });
+      return ok(undefined);
     }
 
     case "get-ring-status":
@@ -494,6 +518,9 @@ async function handleCommand(command: string) {
     case "take-screenshot":
       await handleMessage({ type: "take-screenshot" });
       break;
+    case "snapshot-dom":
+      await handleMessage({ type: "snapshot-dom" });
+      break;
   }
 }
 
@@ -514,6 +541,22 @@ async function captureAndStoreDomSnapshot(tabId: number, key: string): Promise<v
     }
   } catch (err) {
     reportNonFatalError(`DOM snapshot (${key}) failed`, err);
+  }
+}
+
+// Captures a DOM snapshot without storing it against a session — used for the
+// standalone (no active session) snapshot flow. Returns the serialized HTML, or
+// null if the page could not be read (e.g. chrome:// pages).
+async function captureStandaloneDomSnapshot(tabId: number): Promise<string | null> {
+  try {
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: serializeDom,
+    });
+    return (result?.result as string | undefined) ?? null;
+  } catch (err) {
+    reportNonFatalError("Standalone DOM snapshot failed", err);
+    return null;
   }
 }
 
@@ -665,8 +708,10 @@ async function sweepOrphanedOpfsFiles(): Promise<void> {
   try {
     const sess = bgSession;
     const standaloneScreenshots = await getStandaloneScreenshotFilenames();
+    const standaloneDomSnapshots = await getStandaloneDomSnapshotFilenames();
     const activeFiles = new Set<string>([
       ...standaloneScreenshots,
+      ...standaloneDomSnapshots,
       ...(sess?.screenshotFilenames ?? []),
       ...(sess?.videoOpfsFilename ? [sess.videoOpfsFilename] : []),
       ...(sess ? sess.domSnapshotKeys.map((k) => domSnapshotOpfsFilename(sess.id, k)) : []),

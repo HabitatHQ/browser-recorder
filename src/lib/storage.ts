@@ -30,6 +30,11 @@ export function standaloneScreenshotOpfsFilename(slug: string): string {
   return `${OPFS_PREFIX}screenshot-${slug}.png`;
 }
 
+// Standalone (non-session) DOM snapshot OPFS filename.
+export function standaloneDomSnapshotOpfsFilename(slug: string): string {
+  return `${OPFS_PREFIX}dom-${slug}.html`;
+}
+
 const KEYS = {
   session: "session",
   counts: "counts",
@@ -38,6 +43,8 @@ const KEYS = {
   videoConfig: "videoConfig",
   // OPFS filenames for standalone (non-session) screenshots
   screenshotFilenames: "screenshotFilenames",
+  // OPFS filenames for standalone (non-session) DOM snapshots
+  domSnapshotFilenames: "domSnapshotFilenames",
   ringConfig: "ringConfig",
   ringSnapshot: "ringSnapshot",
 } as const;
@@ -50,7 +57,12 @@ export async function getSession(): Promise<Session | null> {
 
 export async function setSession(session: Session | null): Promise<void> {
   if (session === null) {
-    await chrome.storage.session.remove([KEYS.session, KEYS.counts, KEYS.screenshotFilenames]);
+    await chrome.storage.session.remove([
+      KEYS.session,
+      KEYS.counts,
+      KEYS.screenshotFilenames,
+      KEYS.domSnapshotFilenames,
+    ]);
   } else {
     await chrome.storage.session.set({ [KEYS.session]: session });
   }
@@ -86,6 +98,18 @@ export async function appendStandaloneScreenshotFilename(filename: string): Prom
 export async function getStandaloneScreenshotFilenames(): Promise<string[]> {
   const result = await chrome.storage.session.get(KEYS.screenshotFilenames);
   return (result[KEYS.screenshotFilenames] as string[] | undefined) ?? [];
+}
+
+// Standalone (non-session) DOM snapshots — stored as OPFS filenames, mirroring
+// the standalone screenshot handling.
+export async function appendStandaloneDomSnapshotFilename(filename: string): Promise<void> {
+  const existing = await getStandaloneDomSnapshotFilenames();
+  await chrome.storage.session.set({ [KEYS.domSnapshotFilenames]: [...existing, filename] });
+}
+
+export async function getStandaloneDomSnapshotFilenames(): Promise<string[]> {
+  const result = await chrome.storage.session.get(KEYS.domSnapshotFilenames);
+  return (result[KEYS.domSnapshotFilenames] as string[] | undefined) ?? [];
 }
 
 // Settings live in chrome.storage.local (persistent)
