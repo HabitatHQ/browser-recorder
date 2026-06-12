@@ -6,6 +6,18 @@ Captures console logs, network requests, interactions, DOM snapshots, screenshot
 
 Download the latest release from [Releases](../../releases). See [GUIDE.md](GUIDE.md) for installation and usage.
 
+## Screenshots
+
+| Popup | Review &amp; export |
+|---|---|
+| ![Popup](docs/screenshots/popup.png) | ![Review and export](docs/screenshots/recorder.png) |
+
+Settings:
+
+![Settings](docs/screenshots/options.png)
+
+Screenshots are generated from the built extension with `pnpm screenshots` (see [`scripts/capture-screenshots.mjs`](scripts/capture-screenshots.mjs)).
+
 ## Development
 
 ```sh
