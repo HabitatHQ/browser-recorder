@@ -2,3 +2,5 @@ node_modules/
 .output/
 .wxt/
 scratch/
+.env.publish
+.env.prod

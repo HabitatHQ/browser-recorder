@@ -9,6 +9,10 @@ export default defineConfig({
   }),
   manifest: ({ browser }) => {
     const isFirefox = browser === "firefox";
+    // The `key` pins a stable extension ID for local unpacked loads. The Chrome
+    // Web Store assigns its own key/ID, and a mismatching `key` makes store
+    // uploads fail — so strip it for store builds (CWS_BUILD=1).
+    const isStoreBuild = process.env.CWS_BUILD === "1";
     return {
       name: "Browser Recorder",
       short_name: "Recorder",
@@ -48,9 +52,10 @@ export default defineConfig({
         ...(!isFirefox ? (["tabCapture", "offscreen"] as const) : []),
       ],
       host_permissions: ["<all_urls>"],
-      ...(!isFirefox && {
-        key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqMJOHRmc9Xix5QczXMbZjdFGsglwBDQvWxXMvlvJ3gvXJxDqwBGp8CXAgu3mAwjtcEAFD0+gCRlOCswKXC4PEUZsLWbUK+x+85sDtWZjH3Z0Nd4FV20F1qxx5ZWi/sUaexoJMaUmbmZ+G32n97NlhIyTag3KdgyKhQmX8DBNSMEK5mW1SuoFGouiMjwdnWESQYGLcZMn/yg9EF5A8/QqOQn6sYXSTHxdkXkJKrTMt+HgVqn1xuAMrHhMFQ51v2YyxO5PysLqFGP+HUOD1xyN1sBU41+tHNnJNFzvdjeZ73cUstdiDtGah8D6jpeVtTH1LTqGfpLeN/1thkNkgytmBQIDAQAB",
-      }),
+      ...(!isFirefox &&
+        !isStoreBuild && {
+          key: "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqMJOHRmc9Xix5QczXMbZjdFGsglwBDQvWxXMvlvJ3gvXJxDqwBGp8CXAgu3mAwjtcEAFD0+gCRlOCswKXC4PEUZsLWbUK+x+85sDtWZjH3Z0Nd4FV20F1qxx5ZWi/sUaexoJMaUmbmZ+G32n97NlhIyTag3KdgyKhQmX8DBNSMEK5mW1SuoFGouiMjwdnWESQYGLcZMn/yg9EF5A8/QqOQn6sYXSTHxdkXkJKrTMt+HgVqn1xuAMrHhMFQ51v2YyxO5PysLqFGP+HUOD1xyN1sBU41+tHNnJNFzvdjeZ73cUstdiDtGah8D6jpeVtTH1LTqGfpLeN/1thkNkgytmBQIDAQAB",
+        }),
       ...(isFirefox && {
         browser_specific_settings: {
           gecko: {
