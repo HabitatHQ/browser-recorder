@@ -163,6 +163,15 @@ function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
     }
   };
 
+  const snapshotDom = async () => {
+    try {
+      await sendToBackground({ type: "snapshot-dom" });
+      window.close();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3 p-4">
       <Button className="w-full" onClick={startSession} disabled={starting}>
@@ -232,6 +241,16 @@ function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
         </Button>
         <p className="text-center text-[10px] text-muted-foreground/60">
           No debug data — annotation only · ⌥⇧C
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <Button variant="outline" className="w-full" onClick={snapshotDom}>
+          <FileCode className="h-4 w-4" />
+          Snapshot DOM
+        </Button>
+        <p className="text-center text-[10px] text-muted-foreground/60">
+          Capture page HTML — no session · ⌥⇧D
         </p>
       </div>
 

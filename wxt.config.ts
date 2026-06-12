@@ -34,6 +34,10 @@ export default defineConfig({
           description: "Take screenshot (standalone or during session)",
           suggested_key: { default: "Alt+Shift+C", mac: "Alt+Shift+C" },
         },
+        "snapshot-dom": {
+          description: "Capture DOM snapshot (standalone or during session)",
+          suggested_key: { default: "Alt+Shift+D", mac: "Alt+Shift+D" },
+        },
       },
       permissions: [
         "activeTab",
