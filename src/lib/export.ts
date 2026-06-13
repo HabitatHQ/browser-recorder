@@ -7,6 +7,7 @@ import type {
 } from "@browser-recorder/core";
 import { buildReportMd } from "@browser-recorder/core";
 import { Zip, ZipPassThrough } from "fflate";
+import { buildReplayHtml } from "./replay-html";
 
 const README = `\
 # Bug report — chrome-recorder
@@ -26,6 +27,8 @@ Captured with [chrome-recorder](https://github.com/npalladium/chrome-recorder).
 | dom-snapshot-N.html | On-demand DOM snapshots taken during the session |
 | screenshot-N.png | Screenshots taken during the session (annotations rasterised in) |
 | video.webm | Tab recording (if enabled) |
+| replay.html | Self-contained DOM session replay (experimental). Open in any browser — scrub, play, and pause a reconstruction of the page. No extension or network needed. |
+| replay.json | Raw rrweb events behind replay.html, for tooling. |
 
 ## Notes
 
@@ -45,6 +48,8 @@ export interface ExportInput {
     network: unknown[];
     interactions: unknown[];
   };
+  /** rrweb session-replay events (experimental); omitted/empty → no replay files. */
+  replayEvents?: unknown[];
   nestInFolder?: boolean;
   zipTitleFilename?: boolean;
 }
@@ -133,6 +138,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
     screenshots,
     domSnapshots,
     debuggerEvents,
+    replayEvents = [],
     nestInFolder = true,
     zipTitleFilename = false,
   } = input;
@@ -255,6 +261,11 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
 
     for (const [key, html] of Object.entries(domSnapshots)) {
       addText(zip, `${prefix}dom-snapshot-${key}.html`, html);
+    }
+
+    if (replayEvents.length > 1) {
+      addText(zip, `${prefix}replay.json`, JSON.stringify(replayEvents));
+      addText(zip, `${prefix}replay.html`, buildReplayHtml(replayEvents, formValues.title));
     }
 
     Promise.all(work.map((fn) => fn()))

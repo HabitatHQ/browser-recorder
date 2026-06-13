@@ -9,6 +9,9 @@ export interface CaptureConfig {
   autoDomSnapshotOnInteraction: boolean;
   zipFolderNesting: boolean;
   zipTitleFilename: boolean;
+  // Experimental: rrweb DOM session replay. Behind a hidden/experimental toggle
+  // while we validate fidelity. See src/entrypoints/replay-record.ts.
+  replay: boolean;
 }
 
 export interface NetworkFilterConfig {
@@ -43,6 +46,7 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   autoDomSnapshotOnInteraction: false,
   zipFolderNesting: true,
   zipTitleFilename: false,
+  replay: false,
 };
 
 export const DEFAULT_NETWORK_FILTER: NetworkFilterConfig = {
@@ -81,6 +85,9 @@ export interface Session {
   domSnapshotKeys: string[];
   screenshotFilenames: string[];
   videoOpfsFilename: string | null;
+  // OPFS filename for the rrweb replay events JSON (experimental). Null until
+  // the session is stopped with replay capture enabled.
+  replayOpfsFilename: string | null;
 }
 
 export interface SessionCounts {
