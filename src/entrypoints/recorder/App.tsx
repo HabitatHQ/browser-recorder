@@ -69,6 +69,22 @@ async function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+function dataUrlToBlob(dataUrl: string): Blob {
+  const [meta, b64] = dataUrl.split(",");
+  const mime = meta.match(/:(.*?);/)?.[1] ?? "image/png";
+  const bytes = Uint8Array.from(atob(b64 ?? ""), (c) => c.charCodeAt(0));
+  return new Blob([bytes], { type: mime });
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 function SummaryRow({
   icon,
   label,
@@ -375,6 +391,22 @@ export default function App() {
     setScreenshots((prev) => prev.filter((_, i) => i !== index));
   }
 
+  // A standalone screenshot/snapshot with exactly one artifact and no session
+  // data has nothing to bundle — skip the zip and download the raw file.
+  function singleFileExport(zipTitleFilename: boolean): { blob: Blob; filename: string } | null {
+    const mode = modeRef.current;
+    if (session || (mode !== "screenshot" && mode !== "snapshot")) return null;
+    const snapKeys = Object.keys(domSnapshots);
+    if (screenshots.length + snapKeys.length !== 1) return null;
+    const baseName = computeExportBaseName(formValues, session, zipTitleFilename, new Date());
+    if (screenshots.length === 1) {
+      const { dataUrl, annotatedBlob } = screenshots[0];
+      return { blob: annotatedBlob ?? dataUrlToBlob(dataUrl), filename: `${baseName}.png` };
+    }
+    const html = domSnapshots[snapKeys[0]];
+    return { blob: new Blob([html], { type: "text/html" }), filename: `${baseName}.html` };
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setState("submitting");
@@ -384,6 +416,15 @@ export default function App() {
         captureConfig: CaptureConfig;
         networkFilter: NetworkFilterConfig;
       }>({ type: "get-settings" });
+
+      const single = singleFileExport(exportConfig.zipTitleFilename);
+      if (single) {
+        downloadBlob(single.blob, single.filename);
+        setExportFilename(single.filename);
+        setState("success");
+        return;
+      }
+
       const filename = await exportReportAsZip({
         session,
         counts,
@@ -508,6 +549,10 @@ export default function App() {
 
   const isSubmitting = state === "submitting";
   const domSnapshotKeys = Object.keys(domSnapshots);
+  const isStandalone =
+    !session && (modeRef.current === "screenshot" || modeRef.current === "snapshot");
+  const isSingleFileExport = isStandalone && screenshots.length + domSnapshotKeys.length === 1;
+  const singleFileLabel = screenshots.length === 1 ? "Download PNG" : "Download HTML";
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -859,7 +904,7 @@ export default function App() {
 
               <Button type="submit" disabled={isSubmitting} className="w-full">
                 <Download className="h-4 w-4" />
-                {isSubmitting ? "Exporting…" : "Export ZIP"}
+                {isSubmitting ? "Exporting…" : isSingleFileExport ? singleFileLabel : "Export ZIP"}
               </Button>
             </div>
           </div>
