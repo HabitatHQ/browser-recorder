@@ -5,6 +5,8 @@ import {
 import { isDebuggerRuntimeMessage } from "@/lib/bug-report-debugger/messaging";
 import { slugify, toFilenameTimestamp } from "@/lib/export";
 import { fail, ok } from "@/lib/messaging";
+import { injectReplayRecorderIntoTab, stopReplayInTab } from "@/lib/replay";
+import { isReplayEventsMessage } from "@/lib/replay-messaging";
 import {
   OPFS_PREFIX,
   appendStandaloneDomSnapshotFilename,
@@ -16,6 +18,7 @@ import {
   getSettings,
   getStandaloneDomSnapshotFilenames,
   getStandaloneScreenshotFilenames,
+  replayOpfsFilename,
   saveCounts,
   saveRingConfig,
   saveSettings,
@@ -144,6 +147,39 @@ async function writeToOpfs(filename: string, bytes: Uint8Array): Promise<void> {
   await writable.close();
 }
 
+// ─── Replay event streaming ───────────────────────────────────────────────────
+// Replay events stream in from the page bridge as batches. We append each batch
+// to a per-session OPFS file as NDJSON, committing on every flush (writes go to
+// the file's current end), so the recording survives both page reloads and a
+// suspended service worker. Appends are serialized through a promise chain to
+// avoid interleaved writes.
+let replayWriteChain: Promise<void> = Promise.resolve();
+
+function appendReplayEvents(events: unknown[], senderTabId: number | undefined): void {
+  if (!bgSession || bgSession.tabId !== senderTabId || !bgSession.captureConfig.replay) return;
+  if (events.length === 0) return;
+
+  const sessionId = bgSession.id;
+  const filename = replayOpfsFilename(sessionId);
+  if (!bgSession.replayOpfsFilename) {
+    bgSession.replayOpfsFilename = filename;
+    void persistSession();
+  }
+
+  const ndjson = `${events.map((e) => JSON.stringify(e)).join("\n")}\n`;
+  const bytes = new TextEncoder().encode(ndjson);
+  replayWriteChain = replayWriteChain
+    .then(async () => {
+      const dir = await navigator.storage.getDirectory();
+      const handle = await dir.getFileHandle(filename, { create: true });
+      const file = await handle.getFile();
+      const writable = await handle.createWritable({ keepExistingData: true });
+      await writable.write({ type: "write", position: file.size, data: bytes });
+      await writable.close();
+    })
+    .catch((err) => reportNonFatalError("Failed to append replay events", err));
+}
+
 // ─── Offscreen message types ─────────────────────────────────────────────────
 
 type OffscreenMsg =
@@ -232,13 +268,17 @@ export default defineBackground(async () => {
     (tabId) => bgSession?.tabId === tabId || (ringActive && ringTabId === tabId)
   );
 
-  chrome.runtime.onMessage.addListener((message: BgMessage, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if (isDebuggerRuntimeMessage(message)) return;
+    if (isReplayEventsMessage(message)) {
+      appendReplayEvents(message.events, sender.tab?.id);
+      return false;
+    }
     if (isOffscreenMessage(message)) {
       void handleOffscreenMessage(message);
       return false;
     }
-    handleMessage(message)
+    handleMessage(message as BgMessage)
       .then(sendResponse)
       .catch((err: unknown) => {
         reportNonFatalError("Background message handler failed", err);
@@ -278,6 +318,16 @@ export default defineBackground(async () => {
       url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
     });
     recorderTabId = recorderTab.id ?? null;
+  });
+
+  // Re-inject the replay recorder after a navigation so recording resumes on the
+  // new document. rrweb emits a fresh full snapshot, and the appended NDJSON
+  // stream stays continuous across the reload.
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.status !== "complete") return;
+    if (bgSession?.tabId !== tabId || bgSession.status !== "recording") return;
+    if (!bgSession.captureConfig.replay) return;
+    void injectReplayRecorderIntoTab(tabId);
   });
 
   chrome.tabs.onActivated.addListener(async ({ tabId }) => {
@@ -328,6 +378,7 @@ async function handleMessage(message: BgMessage) {
         domSnapshotKeys: [],
         screenshotFilenames: [],
         videoOpfsFilename: null,
+        replayOpfsFilename: null,
       };
 
       bgSession = session;
@@ -351,6 +402,10 @@ async function handleMessage(message: BgMessage) {
         await captureAndStoreDomSnapshot(tab.id, "start");
       }
 
+      if (message.captureConfig.replay) {
+        await injectReplayRecorderIntoTab(tab.id);
+      }
+
       if (message.captureConfig.video) {
         await startVideoCapture(tab.id, bgSession);
       }
@@ -366,6 +421,12 @@ async function handleMessage(message: BgMessage) {
       bgSession.status = "stopping";
       await persistSession();
       clearAutoCaptureTimers();
+      // Stop the page recorder, let the bridge flush its last batch, then wait
+      // for all queued OPFS appends to commit before the recorder reads the file.
+      if (bgSession.captureConfig.replay) {
+        await stopReplayInTab(bgSession.tabId);
+        await replayWriteChain;
+      }
       if (bgSession.captureConfig.video) await stopVideoCapture();
       chrome.action.setBadgeText({ text: "" });
       const recorderTab = await chrome.tabs.create({
@@ -389,6 +450,9 @@ async function handleMessage(message: BgMessage) {
         }
         for (const key of bgSession.domSnapshotKeys) {
           await dir.removeEntry(domSnapshotOpfsFilename(bgSession.id, key)).catch(() => {});
+        }
+        if (bgSession.replayOpfsFilename) {
+          await dir.removeEntry(bgSession.replayOpfsFilename).catch(() => {});
         }
       }
       chrome.action.setBadgeText({ text: "" });
@@ -714,6 +778,7 @@ async function sweepOrphanedOpfsFiles(): Promise<void> {
       ...standaloneDomSnapshots,
       ...(sess?.screenshotFilenames ?? []),
       ...(sess?.videoOpfsFilename ? [sess.videoOpfsFilename] : []),
+      ...(sess?.replayOpfsFilename ? [sess.replayOpfsFilename] : []),
       ...(sess ? sess.domSnapshotKeys.map((k) => domSnapshotOpfsFilename(sess.id, k)) : []),
     ]);
 

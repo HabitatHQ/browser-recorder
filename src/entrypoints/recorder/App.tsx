@@ -1,4 +1,5 @@
 import { AnnotationCanvas } from "@/components/annotation/AnnotationCanvas";
+import { ReplayPlayer } from "@/components/replay-player";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,6 +44,7 @@ import {
   FolderOpen,
   MousePointer,
   Network,
+  PlayCircle,
   Radio,
   RotateCcw,
   Trash2,
@@ -169,6 +171,7 @@ export default function App() {
     description: "",
     notes: "",
   });
+  const [replayEvents, setReplayEvents] = useState<unknown[]>([]);
   const [exportFilename, setExportFilename] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [videoDownloading, setVideoDownloading] = useState(false);
@@ -269,6 +272,7 @@ export default function App() {
               domSnapshotKeys: [],
               screenshotFilenames: [],
               videoOpfsFilename: ring.videoOpfsFilename,
+              replayOpfsFilename: null,
             };
             setSession(ringSession);
             setCounts({
@@ -331,6 +335,22 @@ export default function App() {
 
         setScreenshots(loadedScreenshots.filter((e): e is ScreenshotEntry => e !== null));
         setDomSnapshots(loadedSnaps);
+
+        if (sess?.replayOpfsFilename) {
+          try {
+            const handle = await dir.getFileHandle(sess.replayOpfsFilename);
+            const file = await handle.getFile();
+            // Stored as NDJSON (one rrweb event per line) — the background appends
+            // batches as they stream in.
+            const events = (await file.text())
+              .split("\n")
+              .filter(Boolean)
+              .map((line) => JSON.parse(line) as unknown);
+            if (events.length > 0) setReplayEvents(events);
+          } catch {
+            // replay events unavailable; continue without them
+          }
+        }
 
         if (sess?.debuggerSessionId) {
           try {
@@ -432,6 +452,7 @@ export default function App() {
         screenshots,
         domSnapshots,
         debuggerEvents,
+        replayEvents,
         nestInFolder: exportConfig.zipFolderNesting,
         zipTitleFilename: exportConfig.zipTitleFilename,
       });
@@ -842,6 +863,20 @@ export default function App() {
                   </div>
                 </>
               )}
+
+              {replayEvents.length > 1 && (
+                <>
+                  <Separator />
+                  <div className="flex items-center gap-2 py-1.5 text-sm">
+                    <PlayCircle className="h-4 w-4 text-muted-foreground" />
+                    <span className="flex-1 text-muted-foreground">Session replay</span>
+                    <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                      experimental
+                    </Badge>
+                    <span className="font-medium tabular-nums">{replayEvents.length} events</span>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Right: report form */}
@@ -908,6 +943,19 @@ export default function App() {
               </Button>
             </div>
           </div>
+
+          {replayEvents.length > 1 && (
+            <div className="mt-6 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <PlayCircle className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Session replay</span>
+                <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                  experimental
+                </Badge>
+              </div>
+              <ReplayPlayer events={replayEvents} />
+            </div>
+          )}
         </form>
       </div>
     </div>

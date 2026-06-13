@@ -35,6 +35,11 @@ export function standaloneDomSnapshotOpfsFilename(slug: string): string {
   return `${OPFS_PREFIX}dom-${slug}.html`;
 }
 
+// rrweb replay events JSON for a session (experimental).
+export function replayOpfsFilename(sessionId: string): string {
+  return `${OPFS_PREFIX}replay-${sessionId}.json`;
+}
+
 const KEYS = {
   session: "session",
   counts: "counts",
