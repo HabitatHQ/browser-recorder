@@ -51,6 +51,8 @@ export interface ExportInclude {
   screenshots: boolean;
   domSnapshots: boolean;
   replay: boolean;
+  /** Bundle the recorded video into the ZIP. Off → grab it via the separate download. */
+  video: boolean;
 }
 
 const DEFAULT_INCLUDE: ExportInclude = {
@@ -60,6 +62,7 @@ const DEFAULT_INCLUDE: ExportInclude = {
   screenshots: true,
   domSnapshots: true,
   replay: true,
+  video: true,
 };
 
 export interface ExportInput {
@@ -244,6 +247,24 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
     : [];
   const replayName = include.replay && replayEvents.length > 1 ? "replay.html" : null;
 
+  // Read the recorded video from OPFS so it can be bundled into the ZIP. Large
+  // (up to the configured cap), so it's gated by the include toggle; when off
+  // the recorder's separate Download button is the way to get it.
+  let videoBlob: Blob | null = null;
+  let videoName: string | null = null;
+  if (include.video && session?.videoOpfsFilename) {
+    try {
+      const dir = await navigator.storage.getDirectory();
+      const handle = await dir.getFileHandle(session.videoOpfsFilename);
+      videoBlob = await handle.getFile();
+      videoName = session.videoOpfsFilename.endsWith(".mp4") ? "video.mp4" : "video.webm";
+    } catch {
+      // video not yet flushed / unavailable — skip bundling, leave download path
+      videoBlob = null;
+      videoName = null;
+    }
+  }
+
   const metadata = {
     title: formValues.title,
     url: session?.tabUrl ?? null,
@@ -308,7 +329,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
         timeline,
         screenshots: screenshotNames,
         domSnapshots: domSnapshotNames,
-        video: null,
+        video: videoName,
         replay: replayName,
       })
     );
@@ -354,6 +375,11 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
     if (replayName) {
       addText(zip, `${prefix}replay.json`, JSON.stringify(replayEvents));
       addText(zip, `${prefix}replay.html`, buildReplayHtml(replayEvents, formValues.title));
+    }
+
+    if (videoBlob && videoName) {
+      const blob = videoBlob;
+      work.push(() => addBlob(zip, `${prefix}${videoName}`, blob));
     }
 
     if (diagnostics) {

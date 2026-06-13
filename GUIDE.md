@@ -103,7 +103,7 @@ A self-contained `.zip` is saved locally — named `browser-recording-{title}-{d
 - `interactions.json` — interaction events
 - `dom-snapshot-*.html` — HTML snapshots
 - `screenshot-*.png` — annotated PNG files
-- `video.webm` — (if video was enabled; downloaded separately)
+- `video.webm` — tab recording (if enabled; bundled by default — uncheck **Video** under *Include in export* to download it on its own instead)
 - `metadata.json` — browser, OS, viewport, active extensions, uncaught exceptions
 
 No data leaves the device.
