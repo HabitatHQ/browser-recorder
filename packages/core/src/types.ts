@@ -27,12 +27,40 @@ export interface DebuggerNetworkEvent {
   responseHeaders?: Record<string, string>;
   requestBody?: string;
   responseBody?: string;
+  /**
+   * Set when the submitter dropped this request during review. Headers and
+   * bodies are stripped; method/url/status/timestamp are kept as a tombstone so
+   * the reviewer knows the request existed and was deliberately removed.
+   */
+  dropped?: boolean;
+}
+
+export interface DebuggerWebSocketEvent {
+  kind: "websocket";
+  timestamp: number;
+  url: string;
+  event: "open" | "close" | "error" | "send" | "message";
+  data?: string;
+  code?: number;
+  reason?: string;
+}
+
+export interface DebuggerSSEEvent {
+  kind: "sse";
+  timestamp: number;
+  url: string;
+  event: "open" | "error" | "message";
+  data?: string;
+  eventType?: string;
+  lastEventId?: string;
 }
 
 export type DebuggerEvent =
   | DebuggerActionEvent
   | DebuggerConsoleEvent
-  | DebuggerNetworkEvent;
+  | DebuggerNetworkEvent
+  | DebuggerWebSocketEvent
+  | DebuggerSSEEvent;
 
 export interface SubmitFormValues {
   title: string;
@@ -49,4 +77,6 @@ export interface ReportInput {
   consoleEvents: DebuggerConsoleEvent[];
   networkEvents: DebuggerNetworkEvent[];
   interactions: DebuggerActionEvent[];
+  /** Count of (event, field) pairs the submitter redacted during review. */
+  redactedFieldCount?: number;
 }

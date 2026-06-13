@@ -1,5 +1,6 @@
 import { AnnotationCanvas } from "@/components/annotation/AnnotationCanvas";
 import { DiagnosticsPanel } from "@/components/diagnostics-panel";
+import { IncludeOptions, type IncludeRow, NetworkPrivacyReview } from "@/components/export-review";
 import { ReplayPlayer } from "@/components/replay-player";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { MicButton } from "@/components/voice-input";
 import { sendDebuggerMessage } from "@/lib/bug-report-debugger/messaging";
 import type { Diagnostics } from "@/lib/diagnostics";
-import { computeExportBaseName, exportReportAsZip } from "@/lib/export";
+import { type ExportInclude, computeExportBaseName, exportReportAsZip } from "@/lib/export";
 import { sendToBackground } from "@/lib/messaging";
 import { domSnapshotOpfsFilename } from "@/lib/storage";
 import {
@@ -33,6 +34,12 @@ import type {
   DebuggerSessionSnapshot,
   DebuggerWebSocketEvent,
 } from "@/vendor/capture-core/debugger/types";
+import {
+  type DebuggerNetworkEvent as CoreNetworkEvent,
+  type NetworkEdit,
+  applyNetworkEdits,
+  buildReproSteps,
+} from "@browser-recorder/core";
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -197,13 +204,46 @@ export default function App() {
   const [videoDownloading, setVideoDownloading] = useState(false);
   const [autoClose, setAutoClose] = useState(true);
   const [closeCountdown, setCloseCountdown] = useState(AUTO_CLOSE_SECONDS);
+  // Per-request review decisions (redact fields / drop) and per-artifact include
+  // toggles, both applied at export time.
+  const [networkEdits, setNetworkEdits] = useState<Record<number, NetworkEdit>>({});
+  const [include, setInclude] = useState<ExportInclude>({
+    console: true,
+    network: true,
+    interactions: true,
+    screenshots: true,
+    domSnapshots: true,
+    replay: true,
+  });
+  const [videoBytes, setVideoBytes] = useState(0);
 
   const modeRef = useRef<string | null>(null);
+  const notesPrefilled = useRef(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const mode = params.get("mode");
     modeRef.current = mode;
+
+    // Pre-fill Notes with a "steps to reproduce" draft from the interaction log
+    // so the submitter edits instead of facing a blank box. Never overwrites typing.
+    function prefillNotes(interactions: DebuggerActionEvent[]) {
+      if (notesPrefilled.current) return;
+      const steps = buildReproSteps(interactions);
+      if (!steps) return;
+      notesPrefilled.current = true;
+      setFormValues((v) => (v.notes.trim() ? v : { ...v, notes: steps }));
+    }
+
+    async function loadVideoSize(dir: FileSystemDirectoryHandle, filename: string | null) {
+      if (!filename) return;
+      try {
+        const handle = await dir.getFileHandle(filename);
+        setVideoBytes((await handle.getFile()).size);
+      } catch {
+        // video not yet flushed; size stays 0
+      }
+    }
 
     async function load() {
       try {
@@ -319,12 +359,17 @@ export default function App() {
               sse: [],
             });
             setFormValues((v) => ({ ...v, title: ring.tabTitle ?? "Browser recording" }));
+            prefillNotes(ring.interactions as DebuggerActionEvent[]);
+            if (ring.videoOpfsFilename) {
+              await loadVideoSize(await navigator.storage.getDirectory(), ring.videoOpfsFilename);
+            }
           }
           setState("form");
           return;
         }
 
         const dir = await navigator.storage.getDirectory();
+        void loadVideoSize(dir, sess?.videoOpfsFilename ?? null);
 
         const [loadedScreenshots, loadedSnaps] = await Promise.all([
           Promise.all(
@@ -404,6 +449,7 @@ export default function App() {
                 websocket: wsEvts,
                 sse: sseEvts,
               });
+              prefillNotes(actionEvts as DebuggerActionEvent[]);
             }
           } catch {
             // debugger snapshot unavailable; continue without it
@@ -471,17 +517,24 @@ export default function App() {
         return;
       }
 
+      const { network: editedNetwork, redactedCount } = applyNetworkEdits(
+        debuggerEvents.network as CoreNetworkEvent[],
+        networkEdits
+      );
+
       const filename = await exportReportAsZip({
         session,
         counts,
         formValues,
         screenshots,
         domSnapshots,
-        debuggerEvents,
+        debuggerEvents: { ...debuggerEvents, network: editedNetwork },
         replayEvents,
         diagnostics,
         nestInFolder: exportConfig.zipFolderNesting,
         zipTitleFilename: exportConfig.zipTitleFilename,
+        include,
+        redactedFieldCount: redactedCount,
       });
       setExportFilename(filename);
       if (modeRef.current === "ring") {
@@ -633,6 +686,71 @@ export default function App() {
     !session && (modeRef.current === "screenshot" || modeRef.current === "snapshot");
   const isSingleFileExport = isStandalone && screenshots.length + domSnapshotKeys.length === 1;
   const singleFileLabel = screenshots.length === 1 ? "Download PNG" : "Download HTML";
+
+  const jsonBytes = (v: unknown) => new TextEncoder().encode(JSON.stringify(v)).length;
+  const screenshotBytes = screenshots.reduce(
+    (n, s) =>
+      n + (s.annotatedBlob?.size ?? Math.floor((s.dataUrl.split(",")[1]?.length ?? 0) * 0.75)),
+    0
+  );
+  const domBytes = Object.values(domSnapshots).reduce(
+    (n, h) => n + new TextEncoder().encode(h).length,
+    0
+  );
+  const includeRows: IncludeRow[] = [
+    debuggerEvents.console.length > 0 && {
+      key: "console",
+      label: "Console",
+      count: debuggerEvents.console.length,
+      bytes: jsonBytes(debuggerEvents.console),
+      toggleable: true,
+    },
+    debuggerEvents.network.length > 0 && {
+      key: "network",
+      label: "Network (+ WebSocket/SSE)",
+      count: debuggerEvents.network.length,
+      bytes: jsonBytes([
+        ...debuggerEvents.network,
+        ...debuggerEvents.websocket,
+        ...debuggerEvents.sse,
+      ]),
+      toggleable: true,
+    },
+    debuggerEvents.interactions.length > 0 && {
+      key: "interactions",
+      label: "Interactions",
+      count: debuggerEvents.interactions.length,
+      bytes: jsonBytes(debuggerEvents.interactions),
+      toggleable: true,
+    },
+    screenshots.length > 0 && {
+      key: "screenshots",
+      label: "Screenshots",
+      count: screenshots.length,
+      bytes: screenshotBytes,
+      toggleable: true,
+    },
+    domSnapshotKeys.length > 0 && {
+      key: "domSnapshots",
+      label: "DOM snapshots",
+      count: domSnapshotKeys.length,
+      bytes: domBytes,
+      toggleable: true,
+    },
+    replayEvents.length > 1 && {
+      key: "replay",
+      label: "Session replay (experimental)",
+      bytes: jsonBytes(replayEvents),
+      toggleable: true,
+    },
+    session?.videoOpfsFilename && {
+      key: "video",
+      label: "Video",
+      bytes: videoBytes,
+      note: "downloaded separately",
+      toggleable: false,
+    },
+  ].filter(Boolean) as IncludeRow[];
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -993,20 +1111,43 @@ export default function App() {
                   value={formValues.notes}
                   onChange={(e) => setFormValues((v) => ({ ...v, notes: e.target.value }))}
                 />
+                {notesPrefilled.current && (
+                  <p className="text-xs text-muted-foreground">
+                    Pre-filled from your interactions — edit as needed.
+                  </p>
+                )}
               </div>
-
-              {exportError && (
-                <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                  <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
-                  {exportError}
-                </div>
-              )}
-
-              <Button type="submit" disabled={isSubmitting} className="w-full">
-                <Download className="h-4 w-4" />
-                {isSubmitting ? "Exporting…" : isSingleFileExport ? singleFileLabel : "Export ZIP"}
-              </Button>
             </div>
+          </div>
+
+          {!isSingleFileExport && (
+            <div className="mt-6 flex flex-col gap-4">
+              <NetworkPrivacyReview
+                events={debuggerEvents.network as CoreNetworkEvent[]}
+                edits={networkEdits}
+                onChange={setNetworkEdits}
+              />
+              <IncludeOptions
+                rows={includeRows}
+                value={include as unknown as Record<string, boolean>}
+                onToggle={(key) =>
+                  setInclude((v) => ({ ...v, [key]: !v[key as keyof ExportInclude] }))
+                }
+              />
+            </div>
+          )}
+
+          <div className="mt-6 flex flex-col gap-3">
+            {exportError && (
+              <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />
+                {exportError}
+              </div>
+            )}
+            <Button type="submit" disabled={isSubmitting} className="w-full">
+              <Download className="h-4 w-4" />
+              {isSubmitting ? "Exporting…" : isSingleFileExport ? singleFileLabel : "Export ZIP"}
+            </Button>
           </div>
 
           {replayEvents.length > 1 && (

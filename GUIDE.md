@@ -79,22 +79,32 @@ Press **Alt+Shift+C** or click **Screenshot** in the popup. The annotation canva
 
 Screenshots taken outside a session are included if a session is started before exporting.
 
+### Reviewing before export
+
+The report tab is also a review screen. Before exporting you can:
+
+- **Edit the steps to reproduce.** The Notes field is pre-filled with a numbered draft derived from your recorded interactions — edit it instead of starting from a blank box.
+- **Redact or drop network data.** Open **Network privacy** to see requests with likely secrets flagged (JWTs, API keys, emails, credentials — including in URL query params). Redaction is **opt-in**: tick a field to replace its secrets with `[REDACTED]`, or leave it to keep the value as-is (intentional values and false positives are never touched). You can also **drop** any request entirely — its body and headers are removed, but the report still records that the request happened.
+- **Choose what to include.** **Include in export** lists each artifact with its size and a running total, so you can drop large pieces (e.g. video) before the ZIP balloons.
+
 ### Exporting
 
-Add a title and notes in the report tab, then click **Export ZIP**.
+Add a title and notes, finish your review, then click **Export ZIP**.
 
 ![Review and export](docs/screenshots/recorder.png)
 
 A self-contained `.zip` is saved locally — named `browser-recording-{title}-{date}.zip` — containing:
 
+- `report.html` — **start here.** A self-contained viewer (open in any browser, no server): every channel merged into one filterable timeline, an error-first **Problems** panel, and links to screenshots/DOM/replay.
+- `report.md` — the same summary as Markdown, for humans and agents
+- `events.json` — all channels merged into one timestamp-sorted timeline; each entry carries a `seq`, an offset from session start, and a link to the interaction that likely caused it
 - `console.json` — console entries
-- `network.json` — network requests
+- `network.json` — network requests (entries marked `"dropped": true` were removed during review)
 - `interactions.json` — interaction events
-- `dom/` — HTML snapshots
-- `screenshots/` — annotated PNG files
-- `video.webm` — (if video was enabled)
+- `dom-snapshot-*.html` — HTML snapshots
+- `screenshot-*.png` — annotated PNG files
+- `video.webm` — (if video was enabled; downloaded separately)
 - `metadata.json` — browser, OS, viewport, active extensions, uncaught exceptions
-- `README.md` — summary of the session
 
 No data leaves the device.
 

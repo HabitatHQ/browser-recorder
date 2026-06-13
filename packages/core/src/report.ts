@@ -23,10 +23,24 @@ export function escapeCell(text: string): string {
   return text.replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
 }
 
+function isUncaught(message: string): boolean {
+  return message.startsWith("[uncaught]") || message.startsWith("[unhandled rejection]");
+}
+
 export function buildReportMd(input: ReportInput, now: Date): string {
-  const { title, description, notes, url, startedAt, consoleEvents, networkEvents, interactions } =
-    input;
+  const {
+    title,
+    description,
+    notes,
+    url,
+    startedAt,
+    consoleEvents,
+    networkEvents,
+    interactions,
+    redactedFieldCount = 0,
+  } = input;
   const parts: string[] = [];
+  const offset = (ts: number) => (startedAt !== null ? formatOffset(ts - startedAt) : "—");
 
   parts.push(`# ${title || "Bug report"}`);
   parts.push("");
@@ -36,6 +50,26 @@ export function buildReportMd(input: ReportInput, now: Date): string {
     parts.push(`**Duration:** ${formatDuration(now.getTime() - startedAt)}  `);
   parts.push(`**Recorded:** ${now.toISOString()}`);
   parts.push("");
+
+  // Problems first — the reviewer's "what's wrong" answer, before the raw logs.
+  const exceptions = consoleEvents.filter((e) => e.level === "error" && isUncaught(e.message));
+  const otherErrors = consoleEvents.filter((e) => e.level === "error" && !isUncaught(e.message));
+  const failedRequests = networkEvents.filter((e) => e.status !== undefined && e.status >= 400);
+  if (exceptions.length + otherErrors.length + failedRequests.length > 0) {
+    parts.push("## Problems");
+    parts.push("");
+    for (const e of exceptions) {
+      parts.push(`- **${offset(e.timestamp)}** uncaught: ${escapeCell(e.message.slice(0, 160))}`);
+    }
+    for (const e of otherErrors) {
+      parts.push(`- **${offset(e.timestamp)}** console error: ${escapeCell(e.message.slice(0, 160))}`);
+    }
+    for (const e of failedRequests) {
+      const u = e.url.length > 80 ? `${e.url.slice(0, 77)}...` : e.url;
+      parts.push(`- **${offset(e.timestamp)}** ${e.status} ${e.method} ${escapeCell(u)}`);
+    }
+    parts.push("");
+  }
 
   if (description.trim()) {
     parts.push("## Description");
@@ -83,11 +117,26 @@ export function buildReportMd(input: ReportInput, now: Date): string {
     for (const ev of networkEvents) {
       const time = startedAt !== null ? formatOffset(ev.timestamp - startedAt) : "—";
       const url = escapeCell(ev.url.length > 80 ? `${ev.url.slice(0, 77)}...` : ev.url);
-      const status = ev.status ?? "—";
-      const duration = ev.duration !== undefined ? `${ev.duration}ms` : "—";
+      const status = ev.dropped ? `${ev.status ?? "—"} (dropped)` : (ev.status ?? "—");
+      const duration = ev.dropped ? "—" : ev.duration !== undefined ? `${ev.duration}ms` : "—";
       parts.push(`| ${time} | ${ev.method} | ${url} | ${status} | ${duration} |`);
     }
     parts.push("");
+
+    const droppedCount = networkEvents.filter((e) => e.dropped).length;
+    if (droppedCount > 0 || redactedFieldCount > 0) {
+      const notes: string[] = [];
+      if (droppedCount > 0)
+        notes.push(
+          `${droppedCount} request${droppedCount !== 1 ? "s" : ""} dropped by the submitter (content removed; only that the request happened is recorded)`,
+        );
+      if (redactedFieldCount > 0)
+        notes.push(
+          `${redactedFieldCount} field${redactedFieldCount !== 1 ? "s" : ""} redacted by the submitter`,
+        );
+      parts.push(`> Privacy: ${notes.join("; ")}.`);
+      parts.push("");
+    }
   }
 
   if (interactions.length > 0) {
