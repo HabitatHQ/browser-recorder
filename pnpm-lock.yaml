@@ -32,9 +32,6 @@ importers:
       rrweb:
         specifier: ^2.0.1
         version: 2.0.1
-      rrweb-player:
-        specifier: ^2.0.1
-        version: 2.0.1
       tailwind-merge:
         specifier: ^3.3.0
         version: 3.6.0
@@ -794,12 +791,6 @@ packages:
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
 
-  '@rrweb/packer@2.0.1':
-    resolution: {integrity: sha512-2U8RkVe+ZK3gTtmKjJKjoh6QL1Q6wIlt3sBTJeCPERLr9e0JIimNrZ1+bog1L30CTVP3ULuDf5Ba7RZO+QNcHg==}
-
-  '@rrweb/replay@2.0.1':
-    resolution: {integrity: sha512-UrZONirb8o4t0urg1aJ8aMSWhNHvJ3a2usuVbPJIm/edyFbwTvvY9sg/rrXccyXOntFhhp73R5nCretODRZcCw==}
-
   '@rrweb/types@2.0.1':
     resolution: {integrity: sha512-x8cNaKFxdvS0/5IfKOj1xG8Htnw1fUwqoPqgP61bOaWqZL6t9UtRPpO9ZlMB2z+FiTxg9zlFFL+Da4ZpFuhoiA==}
 
@@ -895,9 +886,6 @@ packages:
     resolution: {integrity: sha512-t6J3OrB5Fc0ExuhohouH0fWUGMYL6PTLhW+E7zIk/pdbnJARZDCwjBznFnkh5ynRnIRSI4YjtTH0t6USjJISrw==}
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
-
-  '@tsconfig/svelte@1.0.13':
-    resolution: {integrity: sha512-5lYJP45Xllo4yE/RUBccBT32eBlRDbqN8r1/MIvQbKxW3aFqaYPCNgm8D5V20X4ShHcwvYWNlKg3liDh1MlBoA==}
 
   '@tybys/wasm-util@0.10.2':
     resolution: {integrity: sha512-RoBvJ2X0wuKlWFIjrwffGw1IqZHKQqzIchKaadZZfnNpsAYp2mM0h36JtPCjNDAHGgYez/15uMBpfGwchhiMgg==}
@@ -1363,9 +1351,6 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
-
-  fflate@0.4.8:
-    resolution: {integrity: sha512-FJqqoDBR00Mdj9ppamLa/Y7vxm+PRmNWA67N846RvsoYVMKB4q3y/de5PA7gUmRMYK/8CMz2GDZQmCRN1wBcWA==}
 
   fflate@0.8.3:
     resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
@@ -1990,9 +1975,6 @@ packages:
 
   rrdom@2.0.1:
     resolution: {integrity: sha512-z8GdQWFmVfa8GpcGkAqfBXseb89z0ciTPSBkID0qr0i6KHCye1MdQ4VoXFf0Ejp3ELe/c7AObu4zsbSbMT+hiw==}
-
-  rrweb-player@2.0.1:
-    resolution: {integrity: sha512-v8PVnOy7Q3kXqWriGuzZo4ndGEV06nCMRkH/jSHweJfTLwpLqb2evgMj0S5FwQLsN2X1VM+L2/i7QWGJfgj9zw==}
 
   rrweb-snapshot@2.0.1:
     resolution: {integrity: sha512-H8TA29ct2tpYtr5oaB0N+ksRY9bhEErfAYcKbce4+w8lqEUQChpKZd41HpBJLkp04b5QUfWUg4v6r9Okf8r7vA==}
@@ -2834,16 +2816,6 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
-  '@rrweb/packer@2.0.1':
-    dependencies:
-      '@rrweb/types': 2.0.1
-      fflate: 0.4.8
-
-  '@rrweb/replay@2.0.1':
-    dependencies:
-      '@rrweb/types': 2.0.1
-      rrweb: 2.0.1
-
   '@rrweb/types@2.0.1': {}
 
   '@rrweb/utils@2.0.1': {}
@@ -2915,8 +2887,6 @@ snapshots:
       '@tailwindcss/oxide': 4.3.0
       tailwindcss: 4.3.0
       vite: 8.0.16(@types/node@25.9.2)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.22.4)
-
-  '@tsconfig/svelte@1.0.13': {}
 
   '@tybys/wasm-util@0.10.2':
     dependencies:
@@ -3372,8 +3342,6 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.4):
     optionalDependencies:
       picomatch: 4.0.4
-
-  fflate@0.4.8: {}
 
   fflate@0.8.3: {}
 
@@ -3981,12 +3949,6 @@ snapshots:
   rrdom@2.0.1:
     dependencies:
       rrweb-snapshot: 2.0.1
-
-  rrweb-player@2.0.1:
-    dependencies:
-      '@rrweb/packer': 2.0.1
-      '@rrweb/replay': 2.0.1
-      '@tsconfig/svelte': 1.0.13
 
   rrweb-snapshot@2.0.1:
     dependencies:
