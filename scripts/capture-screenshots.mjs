@@ -47,6 +47,9 @@ const SHOTS = [
     page: "options.html",
     viewport: { width: 760, height: 1100 },
     waitFor: "text=Network",
+    // README crop only: the settings page is far taller than 1280x800, so a
+    // store frame shrinks it into an illegible sliver. Not store-suitable.
+    readmeOnly: true,
   },
   {
     name: "recorder",
@@ -166,6 +169,11 @@ async function main() {
     const readmeOut = resolve(README_DIR, `${shot.name}.png`);
     await writeFile(readmeOut, raw);
     console.log(`✓ README ${shot.name} → ${readmeOut}`);
+
+    if (shot.readmeOnly) {
+      console.log(`  (store skipped for ${shot.name} — too tall to read at ${STORE_W}x${STORE_H})`);
+      continue;
+    }
 
     const framed = await frameForStore(context, raw);
     const storeOut = resolve(STORE_DIR, `${shot.name}.png`);

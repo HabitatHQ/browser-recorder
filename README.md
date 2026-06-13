@@ -1,4 +1,4 @@
-# chrome-recorder
+# Browser Recorder
 
 A browser extension (Chrome + Firefox) for capturing debug data and exporting self-contained browser recordings. No server, no account, no cloud.
 
@@ -8,19 +8,21 @@ Download the latest release from [Releases](../../releases). See [GUIDE.md](GUID
 
 ## Screenshots
 
-| Popup | Annotate |
-|---|---|
-| ![Popup](docs/screenshots/popup.png) | ![Annotation editor](docs/screenshots/annotation.png) |
+**1. Capture** — open the popup and start a session (or grab a one-off screenshot / DOM snapshot).
 
-Review &amp; export:
+![Popup](docs/screenshots/popup.png)
+
+**2. Annotate** — circle the problem or redact anything sensitive.
+
+![Annotation editor](docs/screenshots/annotation.png)
+
+**3. Review &amp; export** — add a title and notes, then download a self-contained ZIP.
 
 ![Review and export](docs/screenshots/recorder.png)
 
-Settings:
+There's a full settings screen for tuning what gets captured ([`docs/screenshots/options.png`](docs/screenshots/options.png)) — most defaults are fine.
 
-![Settings](docs/screenshots/options.png)
-
-Screenshots are generated from the built extension with `pnpm screenshots` (see [`scripts/capture-screenshots.mjs`](scripts/capture-screenshots.mjs)), which writes both these README crops to `docs/screenshots/` and 1280×800 store-listing images to `docs/store/`.
+Screenshots are generated from the built extension with `pnpm screenshots` (see [`scripts/capture-screenshots.mjs`](scripts/capture-screenshots.mjs)), which writes README crops to `docs/screenshots/` and 1280×800 store-listing images to `docs/store/`.
 
 ## Development
 
@@ -58,7 +60,7 @@ Why a separate build: the `key` in `wxt.config.ts` pins a stable extension ID fo
 The uploaded zip contains **only the extension code + manifest**. The Chrome Web Store API (`upload`/`publish`) handles the package and publish state — **nothing else**. There is no public API for listing assets, so these are managed by hand in the Developer Dashboard:
 
 - **Detailed description** — separate from the manifest `description`; edited in the dashboard.
-- **Screenshots** — 1–5 images, **1280×800** or 640×400 PNG/JPEG. `pnpm screenshots` writes store-ready 1280×800 versions to `docs/store/` (drag them into the dashboard); the `docs/screenshots/` PNGs are the tighter README crops.
+- **Screenshots** — 1–5 images, **1280×800** or 640×400 PNG/JPEG. `pnpm screenshots` writes store-ready 1280×800 versions to `docs/store/`: submit **popup**, **annotation**, and **recorder** (drag them into the dashboard). The Settings page is too long to stay legible at 1280×800, so it's captured for the README only — not the store. The `docs/screenshots/` PNGs are the tighter README crops.
 - **Promo tiles** — small 440×280, optional marquee 1400×560.
 - **Store icon** — the 128×128 icon from the manifest is reused.
 - **Category, language, privacy policy URL** — dashboard fields.
