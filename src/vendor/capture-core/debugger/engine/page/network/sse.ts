@@ -39,11 +39,11 @@ export function installSSECapture({ reporter, postSSE }: SSECaptureInput): void 
       // Intercept addEventListener so named event types are also captured
       const originalAdd = es.addEventListener.bind(es);
       // biome-ignore lint/suspicious/noExplicitAny: generic event listener signature
-      (es as any).addEventListener = function (
+      (es as any).addEventListener = (
         type: string,
         listener: EventListenerOrEventListenerObject,
         options?: boolean | AddEventListenerOptions
-      ) {
+      ) => {
         if (type !== "open" && type !== "error" && type !== "message") {
           const wrapped = (e: Event) => {
             if (e instanceof MessageEvent) {

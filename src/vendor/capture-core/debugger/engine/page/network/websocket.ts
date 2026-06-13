@@ -20,8 +20,7 @@ function previewData(data: unknown): string | undefined {
   if (typeof data === "string") return truncate(data, MAX_BODY_LENGTH);
   if (data instanceof ArrayBuffer) return `[Binary: ${data.byteLength} bytes]`;
   if (data instanceof Blob) return `[Blob: ${data.size} bytes]`;
-  if (ArrayBuffer.isView(data))
-    return `[Binary: ${(data as ArrayBufferView).byteLength} bytes]`;
+  if (ArrayBuffer.isView(data)) return `[Binary: ${(data as ArrayBufferView).byteLength} bytes]`;
   return undefined;
 }
 

@@ -5,7 +5,10 @@ interface UncaughtCaptureInput {
   postConsole: (level: ConsoleLevel, args: unknown[]) => void;
 }
 
-export function installUncaughtExceptionCapture({ reporter, postConsole }: UncaughtCaptureInput): void {
+export function installUncaughtExceptionCapture({
+  reporter,
+  postConsole,
+}: UncaughtCaptureInput): void {
   window.addEventListener("error", (event) => {
     try {
       const msg =

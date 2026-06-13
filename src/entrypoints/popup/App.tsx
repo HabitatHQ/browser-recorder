@@ -48,6 +48,7 @@ function RingSection() {
       .catch(() => {});
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only poll; fetchStatus only calls stable setters/sendToBackground, and re-running would tear down and recreate the interval each render.
   useEffect(() => {
     fetchStatus();
     const id = setInterval(fetchStatus, RING_POLL_MS);
@@ -107,8 +108,8 @@ function RingSection() {
         <div className="text-xs text-muted-foreground pl-6">
           {hasEvents ? (
             <>
-              {formatBufferedTime(status.oldestEventMs)} buffered ·{" "}
-              {status.eventCounts.console} console · {status.eventCounts.network} network
+              {formatBufferedTime(status.oldestEventMs)} buffered · {status.eventCounts.console}{" "}
+              console · {status.eventCounts.network} network
               {status.eventCounts.interactions > 0
                 ? ` · ${status.eventCounts.interactions} int`
                 : ""}
@@ -121,12 +122,7 @@ function RingSection() {
       )}
 
       {active && (
-        <Button
-          variant="outline"
-          className="w-full"
-          onClick={exportRing}
-          disabled={!hasEvents}
-        >
+        <Button variant="outline" className="w-full" onClick={exportRing} disabled={!hasEvents}>
           Export
         </Button>
       )}
@@ -357,9 +353,7 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
         <span className="text-muted-foreground">{formatDuration(elapsed)}</span>
         <span className="text-border">│</span>
         <span className="text-muted-foreground">{statusParts.join(" · ")}</span>
-        {counts.errors > 0 && (
-          <span className="text-destructive">· {counts.errors} errors</span>
-        )}
+        {counts.errors > 0 && <span className="text-destructive">· {counts.errors} errors</span>}
       </div>
 
       {isStopping && (
@@ -370,7 +364,9 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
       )}
 
       {ringActive && (
-        <p className="text-xs text-muted-foreground/60">Continuous capture: buffering in background</p>
+        <p className="text-xs text-muted-foreground/60">
+          Continuous capture: buffering in background
+        </p>
       )}
 
       {error && <p className="text-xs text-destructive">{error}</p>}
@@ -450,7 +446,9 @@ export default function App() {
 
     chrome.tabs
       .query({ active: true, currentWindow: true })
-      .then(([tab]) => { if (tab?.id != null) setCurrentTabId(tab.id); })
+      .then(([tab]) => {
+        if (tab?.id != null) setCurrentTabId(tab.id);
+      })
       .catch(() => {});
   }, []);
 
@@ -473,7 +471,11 @@ export default function App() {
 
       {!loading &&
         settingsLoaded &&
-        (session ? <ActiveView currentTabId={currentTabId} /> : <IdleView initialConfig={initialConfig} />)}
+        (session ? (
+          <ActiveView currentTabId={currentTabId} />
+        ) : (
+          <IdleView initialConfig={initialConfig} />
+        ))}
     </div>
   );
 }

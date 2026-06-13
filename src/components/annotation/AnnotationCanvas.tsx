@@ -377,13 +377,23 @@ export function AnnotationCanvas({ imageDataUrl, onDone, onCancel }: AnnotationC
         className="flex flex-col items-center gap-1 bg-background py-2"
         style={{ width: TOOLBAR_WIDTH }}
       >
-        <ToolBtn active={tool === "arrow"} onClick={() => setTool("arrow")} title="Arrow" label="Arrow">
+        <ToolBtn
+          active={tool === "arrow"}
+          onClick={() => setTool("arrow")}
+          title="Arrow"
+          label="Arrow"
+        >
           <ArrowUpRight className="h-4 w-4" />
         </ToolBtn>
         <ToolBtn active={tool === "rect"} onClick={() => setTool("rect")} title="Rect" label="Rect">
           <Square className="h-4 w-4" />
         </ToolBtn>
-        <ToolBtn active={tool === "blur"} onClick={() => setTool("blur")} title="Redact" label="Redact">
+        <ToolBtn
+          active={tool === "blur"}
+          onClick={() => setTool("blur")}
+          title="Redact"
+          label="Redact"
+        >
           <EyeOff className="h-4 w-4" />
         </ToolBtn>
 
