@@ -181,6 +181,17 @@ function appendReplayEvents(events: unknown[], senderTabId: number | undefined):
   }
   if (events.length === 0) return;
   bumpStage("replay", "stream", events.length);
+  // rrweb is only replayable if a FullSnapshot (type 2) is present; tally the
+  // key event types so the diagnostics panel shows whether one was captured.
+  let metaN = 0;
+  let fullN = 0;
+  for (const e of events) {
+    const t = (e as { type?: number }).type;
+    if (t === 4) metaN++;
+    else if (t === 2) fullN++;
+  }
+  if (metaN > 0) bumpStage("replay", "meta", metaN);
+  if (fullN > 0) bumpStage("replay", "fullSnapshot", fullN);
 
   const filename = replayOpfsFilename(session.id);
   if (!session.replayOpfsFilename) {

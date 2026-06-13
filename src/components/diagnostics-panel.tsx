@@ -21,7 +21,8 @@ export function DiagnosticsPanel({
   const errorCount = findings.filter((f) => f.level === "error").length;
   const warnCount = findings.filter((f) => f.level === "warn").length;
   const hasIssues = errorCount + warnCount > 0;
-  const [open, setOpen] = useState(hasIssues);
+  // Always collapsed by default — the header chips already signal status at a glance.
+  const [open, setOpen] = useState(false);
 
   // Nothing was recorded (e.g. standalone screenshot/snapshot) — hide entirely.
   if (!diagnostics && findings.length === 0) return null;
