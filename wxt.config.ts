@@ -1,11 +1,32 @@
 import tailwindcss from "@tailwindcss/vite"
-import { defineConfig } from "wxt"
+import { type Plugin, defineConfig } from "wxt"
+
+// chrome.scripting.executeScript validates injected files with base::IsStringUTF8,
+// which rejects Unicode *non-characters* (U+FDD0–U+FDEF, U+FFFE/U+FFFF) even though
+// they're valid UTF-8. rrweb's bundle embeds a raw U+FFFE in its CSS-BOM check, so
+// the injected replay-record.js fails to load with "isn't UTF-8 encoded". Escaping
+// those code points to \uXXXX keeps the strings identical at runtime while making
+// the file bytes injectable. Targeted (not a full ASCII pass) to minimize churn.
+function escapeUtf8NonCharacters(): Plugin {
+  return {
+    name: "escape-utf8-noncharacters",
+    generateBundle(_options, bundle) {
+      for (const file of Object.values(bundle)) {
+        if (file.type !== "chunk") continue;
+        file.code = file.code.replace(
+          new RegExp("[\\uFDD0-\\uFDEF\\uFFFE\\uFFFF]", "g"),
+          (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`
+        );
+      }
+    },
+  };
+}
 
 export default defineConfig({
   srcDir: "src",
   modules: ["@wxt-dev/module-react"],
   vite: () => ({
-    plugins: [tailwindcss()],
+    plugins: [tailwindcss(), escapeUtf8NonCharacters()],
   }),
   manifest: ({ browser }) => {
     const isFirefox = browser === "firefox";
