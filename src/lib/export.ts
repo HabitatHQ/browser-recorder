@@ -29,6 +29,7 @@ Captured with [chrome-recorder](https://github.com/npalladium/chrome-recorder).
 | video.webm | Tab recording (if enabled) |
 | replay.html | Self-contained DOM session replay (experimental). Open in any browser — scrub, play, and pause a reconstruction of the page. No extension or network needed. |
 | replay.json | Raw rrweb events behind replay.html, for tooling. |
+| _browser_recorder_self_diagnostics.json | Self-diagnostics from the recorder itself: per-feature capture health (what was enabled, what produced data, any non-fatal errors). Use it to tell "the app had no console errors" apart from "console capture silently failed". |
 
 ## Notes
 
@@ -50,6 +51,8 @@ export interface ExportInput {
   };
   /** rrweb session-replay events (experimental); omitted/empty → no replay files. */
   replayEvents?: unknown[];
+  /** Capture-health diagnostics; written as _browser_recorder_self_diagnostics.json. */
+  diagnostics?: unknown;
   nestInFolder?: boolean;
   zipTitleFilename?: boolean;
 }
@@ -139,6 +142,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
     domSnapshots,
     debuggerEvents,
     replayEvents = [],
+    diagnostics,
     nestInFolder = true,
     zipTitleFilename = false,
   } = input;
@@ -266,6 +270,14 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
     if (replayEvents.length > 1) {
       addText(zip, `${prefix}replay.json`, JSON.stringify(replayEvents));
       addText(zip, `${prefix}replay.html`, buildReplayHtml(replayEvents, formValues.title));
+    }
+
+    if (diagnostics) {
+      addText(
+        zip,
+        `${prefix}_browser_recorder_self_diagnostics.json`,
+        JSON.stringify(diagnostics, null, 2)
+      );
     }
 
     Promise.all(work.map((fn) => fn()))
