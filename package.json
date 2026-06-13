@@ -12,6 +12,8 @@
     "zip:firefox": "wxt zip -b firefox",
     "package": "wxt zip && wxt zip -b firefox",
     "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "icons": "node scripts/generate-icons.mjs",
     "screenshots": "wxt build && node scripts/capture-screenshots.mjs",
     "build:cws": "./scripts/build-cws.sh",
@@ -40,6 +42,7 @@
     "playwright": "^1.60.0",
     "tailwindcss": "^4.1.8",
     "typescript": "^5.8.3",
+    "vitest": "^4.1.8",
     "wxt": "^0.20.6"
   }
 }
