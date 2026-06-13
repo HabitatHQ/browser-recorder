@@ -214,6 +214,7 @@ export default function App() {
     screenshots: true,
     domSnapshots: true,
     replay: true,
+    video: true,
   });
   const [videoBytes, setVideoBytes] = useState(0);
 
@@ -747,8 +748,8 @@ export default function App() {
       key: "video",
       label: "Video",
       bytes: videoBytes,
-      note: "downloaded separately",
-      toggleable: false,
+      note: "uncheck to download separately below",
+      toggleable: true,
     },
   ].filter(Boolean) as IncludeRow[];
 
