@@ -185,11 +185,17 @@ export function summarizeDiagnostics(
         feature: "replay",
         message: `events captured but OPFS write failed: ${r.write.lastError}`,
       });
+    } else if ((r.fullSnapshot?.count ?? 0) === 0) {
+      findings.push({
+        level: "error",
+        feature: "replay",
+        message: `${r.stream?.count ?? 0} events captured but no FullSnapshot — replay will be blank`,
+      });
     } else {
       findings.push({
         level: "ok",
         feature: "replay",
-        message: `${r.stream?.count ?? 0} events captured`,
+        message: `${r.stream?.count ?? 0} events, ${r.fullSnapshot?.count} snapshot(s)`,
       });
     }
   }
