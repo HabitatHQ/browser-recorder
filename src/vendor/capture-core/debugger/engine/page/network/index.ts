@@ -1,7 +1,7 @@
 import { installFetchCapture } from "./fetch/install";
-import { installSSECapture, type SSEPayload } from "./sse";
+import { type SSEPayload, installSSECapture } from "./sse";
 import type { NetworkCaptureInput } from "./types";
-import { installWebSocketCapture, type WebSocketPayload } from "./websocket";
+import { type WebSocketPayload, installWebSocketCapture } from "./websocket";
 import { installXhrCapture } from "./xhr";
 
 export type { SSEPayload, WebSocketPayload };

@@ -31,7 +31,7 @@ type RawEventsCallback = (tabId: number, events: unknown[]) => void;
 
 export function registerDebuggerBackgroundListeners(
   onRawEvents?: RawEventsCallback,
-  shouldPreserveTab?: (tabId: number) => boolean,
+  shouldPreserveTab?: (tabId: number) => boolean
 ): DebuggerBridge {
   const scope = globalThis as typeof globalThis & { [BACKGROUND_LISTENER_FLAG]?: boolean };
   if (scope[BACKGROUND_LISTENER_FLAG]) {

@@ -3,7 +3,7 @@ import { installConsoleCapture } from "./console";
 import { INSTALL_FLAG } from "./constants";
 import { createPageDiagnostics } from "./diagnostics";
 import { createEventQueue } from "./event-queue";
-import { installNetworkCapture, type SSEPayload, type WebSocketPayload } from "./network";
+import { type SSEPayload, type WebSocketPayload, installNetworkCapture } from "./network";
 import { createStringifyValue } from "./serializer";
 import type { ConsoleLevel } from "./types";
 import { installUncaughtExceptionCapture } from "./uncaught";
