@@ -10,9 +10,9 @@ import { Zip, ZipPassThrough } from "fflate";
 import { buildReplayHtml } from "./replay-html";
 
 const README = `\
-# Bug report — chrome-recorder
+# Bug report — Browser Recorder
 
-Captured with [chrome-recorder](https://github.com/npalladium/chrome-recorder).
+Captured with [Browser Recorder](https://github.com/npalladium/chrome-recorder).
 
 ## Files
 
