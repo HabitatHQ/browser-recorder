@@ -3,6 +3,17 @@ import {
   registerDebuggerBackgroundListeners,
 } from "@/lib/bug-report-debugger/engine/background";
 import { isDebuggerRuntimeMessage } from "@/lib/bug-report-debugger/messaging";
+import {
+  bumpStage,
+  expectStage,
+  failStage,
+  flushDiagnostics,
+  getDiagnostics,
+  loadDiagnostics,
+  markStageOk,
+  recordDiagnosticError,
+  resetDiagnostics,
+} from "@/lib/diagnostics";
 import { slugify, toFilenameTimestamp } from "@/lib/export";
 import { fail, ok } from "@/lib/messaging";
 import { injectReplayRecorderIntoTab, stopReplayInTab } from "@/lib/replay";
@@ -37,7 +48,7 @@ import {
   type Session,
   type SessionCounts,
 } from "@/lib/types";
-import { reportNonFatalError } from "@/vendor/shared/lib/errors";
+import { reportNonFatalError, setErrorSink } from "@/vendor/shared/lib/errors";
 
 // ─── Timing constants ────────────────────────────────────────────────────────
 
@@ -98,6 +109,9 @@ async function initState(): Promise<void> {
   bgSession = await getSession();
   bgCounts = await getCounts();
   ringConfig = await getRingConfig();
+  await loadDiagnostics();
+  // Route every reportNonFatalError in this context into the diagnostics store.
+  setErrorSink(recordDiagnosticError);
 }
 
 function persistSession(): Promise<void> {
@@ -156,13 +170,21 @@ async function writeToOpfs(filename: string, bytes: Uint8Array): Promise<void> {
 let replayWriteChain: Promise<void> = Promise.resolve();
 
 function appendReplayEvents(events: unknown[], senderTabId: number | undefined): void {
-  if (!bgSession || bgSession.tabId !== senderTabId || !bgSession.captureConfig.replay) return;
+  const session = bgSession;
+  if (!session || session.tabId !== senderTabId || !session.captureConfig.replay) {
+    failStage(
+      "replay",
+      "stream",
+      `events from tab ${senderTabId} rejected (session tab ${bgSession?.tabId ?? "none"}, replay ${bgSession?.captureConfig.replay ?? "off"})`
+    );
+    return;
+  }
   if (events.length === 0) return;
+  bumpStage("replay", "stream", events.length);
 
-  const sessionId = bgSession.id;
-  const filename = replayOpfsFilename(sessionId);
-  if (!bgSession.replayOpfsFilename) {
-    bgSession.replayOpfsFilename = filename;
+  const filename = replayOpfsFilename(session.id);
+  if (!session.replayOpfsFilename) {
+    session.replayOpfsFilename = filename;
     void persistSession();
   }
 
@@ -176,8 +198,12 @@ function appendReplayEvents(events: unknown[], senderTabId: number | undefined):
       const writable = await handle.createWritable({ keepExistingData: true });
       await writable.write({ type: "write", position: file.size, data: bytes });
       await writable.close();
+      bumpStage("replay", "write", bytes.byteLength);
     })
-    .catch((err) => reportNonFatalError("Failed to append replay events", err));
+    .catch((err) => {
+      failStage("replay", "write", err);
+      reportNonFatalError("Failed to append replay events", err);
+    });
 }
 
 // ─── Offscreen message types ─────────────────────────────────────────────────
@@ -235,6 +261,7 @@ export default defineBackground(async () => {
         if (websocketN > 0) bumpCount("websocket", websocketN);
         if (sseN > 0) bumpCount("sse", sseN);
         if (interactionsN > 0) bumpCount("interactions", interactionsN);
+        if (events.length > 0) bumpStage("debugger", "events", events.length);
 
         if (hasAutoTriggerAction) {
           if (bgSession.captureConfig.autoScreenshotOnInteraction) {
@@ -313,6 +340,7 @@ export default defineBackground(async () => {
     if (bgSession.captureConfig.video) await stopVideoCapture();
     bgSession.status = "stopping";
     await persistSession();
+    await flushDiagnostics();
     chrome.action.setBadgeText({ text: "" });
     const recorderTab = await chrome.tabs.create({
       url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
@@ -352,6 +380,9 @@ async function handleMessage(message: BgMessage) {
     case "get-counts":
       return ok(bgCounts);
 
+    case "get-diagnostics":
+      return ok(getDiagnostics());
+
     case "get-settings":
       return ok(await getSettings());
 
@@ -385,6 +416,14 @@ async function handleMessage(message: BgMessage) {
       bgCounts = emptyCounts();
       await persistSession();
 
+      // Declare which captures are expected this session so the diagnostics
+      // panel can flag any that produce nothing.
+      resetDiagnostics(session.id);
+      const cc = message.captureConfig;
+      if (cc.console) expectStage("debugger", "events");
+      if (cc.replay) expectStage("replay", "inject");
+      if (cc.video) expectStage("video", "start");
+
       try {
         const { sessionId: dbgId } = await debuggerBridge.startSession(
           tab.id,
@@ -408,6 +447,7 @@ async function handleMessage(message: BgMessage) {
 
       if (message.captureConfig.video) {
         await startVideoCapture(tab.id, bgSession);
+        markStageOk("video", "start");
       }
 
       chrome.action.setBadgeText({ text: "REC" });
@@ -428,6 +468,7 @@ async function handleMessage(message: BgMessage) {
         await replayWriteChain;
       }
       if (bgSession.captureConfig.video) await stopVideoCapture();
+      await flushDiagnostics();
       chrome.action.setBadgeText({ text: "" });
       const recorderTab = await chrome.tabs.create({
         url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
@@ -484,6 +525,7 @@ async function handleMessage(message: BgMessage) {
             bgSession.screenshotFilenames.push(filename);
             void persistSession();
             bumpCount("screenshots");
+            bumpStage("screenshot", "capture");
           } else {
             // Standalone screenshot — write to OPFS with a slug-based name, store
             // the filename (not the data URL) in session storage to stay well under
@@ -602,8 +644,10 @@ async function captureAndStoreDomSnapshot(tabId: number, key: string): Promise<v
       await writeToOpfs(filename, new TextEncoder().encode(html));
       bgSession.domSnapshotKeys.push(key);
       void persistSession();
+      bumpStage("dom", "snapshot");
     }
   } catch (err) {
+    failStage("dom", "snapshot", err);
     reportNonFatalError(`DOM snapshot (${key}) failed`, err);
   }
 }
@@ -746,10 +790,12 @@ async function closeOffscreenIfOpen(): Promise<void> {
 
 async function handleOffscreenMessage(msg: OffscreenMsg): Promise<void> {
   if (msg.type === "offscreen-recording-done") {
+    bumpStage("video", "write", msg.totalBytes);
     await closeOffscreenIfOpen();
   } else if (msg.type === "offscreen-size-warning" && msg.megabytes >= 500) {
     await closeOffscreenIfOpen();
   } else if (msg.type === "offscreen-error") {
+    failStage("video", "write", msg.message);
     reportNonFatalError("Video recording error", new Error(msg.message));
     await closeOffscreenIfOpen();
   } else if (msg.type === "offscreen-ring-chunk") {

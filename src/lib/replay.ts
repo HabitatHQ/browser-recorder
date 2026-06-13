@@ -1,3 +1,4 @@
+import { failStage, markStageOk } from "@/lib/diagnostics";
 import { REPLAY_STOP_MESSAGE } from "@/lib/replay-messaging";
 import { reportNonFatalError } from "@/vendor/shared/lib/errors";
 
@@ -21,7 +22,9 @@ export async function injectReplayRecorderIntoTab(tabId: number): Promise<void> 
       world: "MAIN",
       files: [REPLAY_RECORD_FILE],
     });
+    markStageOk("replay", "inject");
   } catch (error) {
+    failStage("replay", "inject", error);
     reportNonFatalError(`Failed to inject replay recorder into tab ${tabId}`, error);
   }
 }

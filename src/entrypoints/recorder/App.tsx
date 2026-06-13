@@ -1,4 +1,5 @@
 import { AnnotationCanvas } from "@/components/annotation/AnnotationCanvas";
+import { DiagnosticsPanel } from "@/components/diagnostics-panel";
 import { ReplayPlayer } from "@/components/replay-player";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { MicButton } from "@/components/voice-input";
 import { sendDebuggerMessage } from "@/lib/bug-report-debugger/messaging";
+import type { Diagnostics } from "@/lib/diagnostics";
 import { computeExportBaseName, exportReportAsZip } from "@/lib/export";
 import { sendToBackground } from "@/lib/messaging";
 import { domSnapshotOpfsFilename } from "@/lib/storage";
@@ -172,6 +174,7 @@ export default function App() {
     notes: "",
   });
   const [replayEvents, setReplayEvents] = useState<unknown[]>([]);
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [exportFilename, setExportFilename] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [videoDownloading, setVideoDownloading] = useState(false);
@@ -191,6 +194,10 @@ export default function App() {
         ]);
         setSession(sess);
         setCounts(cnts);
+
+        sendToBackground<Diagnostics>({ type: "get-diagnostics" })
+          .then(setDiagnostics)
+          .catch(() => {});
 
         if (sess?.tabTitle) {
           setFormValues((v) => ({ ...v, title: sess.tabTitle ?? v.title }));
@@ -453,6 +460,7 @@ export default function App() {
         domSnapshots,
         debuggerEvents,
         replayEvents,
+        diagnostics,
         nestInFolder: exportConfig.zipFolderNesting,
         zipTitleFilename: exportConfig.zipTitleFilename,
       });
@@ -579,6 +587,12 @@ export default function App() {
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-5xl px-4 py-8">
         <h1 className="text-xl font-semibold mb-6">Review &amp; export bug report</h1>
+
+        <DiagnosticsPanel
+          captureConfig={session?.captureConfig ?? null}
+          counts={counts}
+          diagnostics={diagnostics}
+        />
 
         <form onSubmit={handleSubmit}>
           <div className="grid gap-6 md:grid-cols-2">

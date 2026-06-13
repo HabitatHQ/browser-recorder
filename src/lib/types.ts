@@ -143,6 +143,7 @@ export interface RingSnapshot {
 // Messages between popup/recorder and background
 export type BgMessage =
   | { type: "get-session" }
+  | { type: "get-diagnostics" }
   | { type: "start-session"; captureConfig: CaptureConfig }
   | { type: "stop-session" }
   | { type: "discard-session" }
