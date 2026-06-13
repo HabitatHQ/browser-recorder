@@ -15,6 +15,8 @@
 2. Open `about:debugging#/runtime/this-firefox`.
 3. Click **Load Temporary Add-on** and select the `manifest.json` inside the folder.
 
+> **Note:** a temporary add-on is removed when Firefox restarts — you'll need to load it again. Video capture is Chrome-only (Firefox lacks the `tabCapture`/`offscreen` APIs); all other channels work on both browsers.
+
 The extension icon appears in the toolbar. Pin it for quick access.
 
 ---
@@ -34,11 +36,15 @@ There are two independent capture modes — use whichever fits the situation:
 
 Click the extension icon or press **Alt+Shift+R**. The icon badge turns red while recording is active.
 
+![Popup](docs/screenshots/popup.png)
+
 Click the icon again (or press **Alt+Shift+S**) to stop the session. The report tab opens automatically — complete or close it to finish.
 
 ### Capture channels
 
 All channels are independently toggled in the **popup** or the **Options page** (`chrome://extensions` → Chrome Recorder → Extension options).
+
+![Options](docs/screenshots/options.png)
 
 | Channel | What it records |
 |---|---|
@@ -67,13 +73,19 @@ Ring recording captures the same data as a session (console, network, interactio
 
 ### Taking a screenshot
 
-Press **Alt+Shift+C** or click **Screenshot** in the popup. The annotation canvas opens — draw arrows, rectangles, or apply blur before saving.
+Press **Alt+Shift+C** or click **Screenshot** in the popup. The annotation canvas opens — draw arrows, rectangles, or apply blur before saving (circle the problem or redact anything sensitive).
+
+![Annotation editor](docs/screenshots/annotation.png)
 
 Screenshots taken outside a session are included if a session is started before exporting.
 
 ### Exporting
 
-Click **Export ZIP** in the report tab. A self-contained `.zip` is saved locally — named `browser-recording-{title}-{date}.zip` — containing:
+Add a title and notes in the report tab, then click **Export ZIP**.
+
+![Review and export](docs/screenshots/recorder.png)
+
+A self-contained `.zip` is saved locally — named `browser-recording-{title}-{date}.zip` — containing:
 
 - `console.json` — console entries
 - `network.json` — network requests
@@ -92,7 +104,8 @@ No data leaves the device.
 |---|---|
 | Alt+Shift+R | Start session |
 | Alt+Shift+S | Stop session and open report |
-| Alt+Shift+C | Take screenshot |
+| Alt+Shift+C | Take screenshot (standalone or during a session) |
+| Alt+Shift+D | Capture DOM snapshot (standalone or during a session) |
 
 Shortcuts can be changed at `chrome://extensions/shortcuts`.
 
