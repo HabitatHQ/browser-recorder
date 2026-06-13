@@ -28,7 +28,6 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "rrweb": "^2.0.1",
-    "rrweb-player": "^2.0.1",
     "tailwind-merge": "^3.3.0"
   },
   "devDependencies": {
