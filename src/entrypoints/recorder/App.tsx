@@ -56,6 +56,23 @@ import { useEffect, useRef, useState } from "react";
 
 type AppState = "loading" | "annotating" | "form" | "submitting" | "success";
 
+const AUTO_CLOSE_SECONDS = 3;
+
+// Close this recorder tab. Opened via chrome.tabs.create (not window.open), so
+// window.close() won't work — remove the tab by its own id instead.
+async function closeRecorderTab(): Promise<void> {
+  try {
+    const tab = await chrome.tabs.getCurrent();
+    if (tab?.id != null) {
+      await chrome.tabs.remove(tab.id);
+      return;
+    }
+  } catch {
+    // fall through
+  }
+  window.close();
+}
+
 interface DebuggerEvents {
   console: unknown[];
   network: unknown[];
@@ -178,6 +195,8 @@ export default function App() {
   const [exportFilename, setExportFilename] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [videoDownloading, setVideoDownloading] = useState(false);
+  const [autoClose, setAutoClose] = useState(true);
+  const [closeCountdown, setCloseCountdown] = useState(AUTO_CLOSE_SECONDS);
 
   const modeRef = useRef<string | null>(null);
 
@@ -518,6 +537,22 @@ export default function App() {
     setState("form");
   }
 
+  // Restart the countdown whenever the success screen is (re)entered.
+  useEffect(() => {
+    if (state === "success") setCloseCountdown(AUTO_CLOSE_SECONDS);
+  }, [state]);
+
+  // Tick the auto-close countdown and close the tab at zero.
+  useEffect(() => {
+    if (state !== "success" || !autoClose) return;
+    if (closeCountdown <= 0) {
+      void closeRecorderTab();
+      return;
+    }
+    const id = setTimeout(() => setCloseCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [state, autoClose, closeCountdown]);
+
   if (state === "loading") {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
@@ -570,6 +605,22 @@ export default function App() {
               <RotateCcw className="h-4 w-4" />
               New report
             </Button>
+          </div>
+          <div className="flex flex-col items-center gap-1.5">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={autoClose}
+                onChange={(e) => setAutoClose(e.target.checked)}
+                className="accent-primary"
+              />
+              Auto close
+            </label>
+            {autoClose && (
+              <p className="text-xs text-muted-foreground">
+                Auto closing in {closeCountdown} second{closeCountdown === 1 ? "" : "s"}…
+              </p>
+            )}
           </div>
         </div>
       </div>
