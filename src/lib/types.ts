@@ -9,8 +9,8 @@ export interface CaptureConfig {
   autoDomSnapshotOnInteraction: boolean;
   zipFolderNesting: boolean;
   zipTitleFilename: boolean;
-  // Experimental: rrweb DOM session replay. Behind a hidden/experimental toggle
-  // while we validate fidelity. See src/entrypoints/replay-record.ts.
+  // Experimental: rrweb DOM session replay. Cross-origin styles/canvas may
+  // render imperfectly. Adds replay.html + replay.json to the export.
   replay: boolean;
 }
 
@@ -78,7 +78,7 @@ export interface Session {
   tabUrl: string | undefined;
   tabTitle: string | undefined;
   startedAt: number;
-  status: "starting" | "recording" | "stopping";
+  status: "starting" | "recording" | "paused" | "stopping";
   captureConfig: CaptureConfig;
   debuggerSessionId: string | null;
   domSnapshotCount: number;
@@ -146,6 +146,8 @@ export type BgMessage =
   | { type: "get-diagnostics" }
   | { type: "start-session"; captureConfig: CaptureConfig }
   | { type: "stop-session" }
+  | { type: "pause-session" }
+  | { type: "resume-session" }
   | { type: "discard-session" }
   | { type: "take-screenshot" }
   | { type: "snapshot-dom" }

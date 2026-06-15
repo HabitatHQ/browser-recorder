@@ -68,6 +68,10 @@ chrome.runtime.onMessage.addListener(
       });
     } else if (message.type === "offscreen-stop-recording") {
       stopRecording();
+    } else if (message.type === "offscreen-pause-recording") {
+      if (recorder?.state === "recording") recorder.pause();
+    } else if (message.type === "offscreen-resume-recording") {
+      if (recorder?.state === "paused") recorder.resume();
     } else if (message.type === "offscreen-start-ring" && message.streamId) {
       const cfg = message.videoConfig;
       if (!cfg) return false;
