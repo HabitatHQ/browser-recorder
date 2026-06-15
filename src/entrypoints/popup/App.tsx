@@ -227,6 +227,11 @@ function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
           </div>
           <Switch id="video" checked={config.video} onChange={() => toggle("video")} />
         </div>
+        {import.meta.env.BROWSER === "firefox" && config.video && (
+          <p className="text-xs text-muted-foreground pl-6">
+            A capture tab will open — select this tab in the picker.
+          </p>
+        )}
       </div>
 
       <Separator />

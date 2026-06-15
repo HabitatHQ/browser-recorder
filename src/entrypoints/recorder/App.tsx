@@ -9,7 +9,6 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { MicButton } from "@/components/voice-input";
-import { sendDebuggerMessage } from "@/lib/bug-report-debugger/messaging";
 import type { Diagnostics } from "@/lib/diagnostics";
 import { type ExportInclude, computeExportBaseName, exportReportAsZip } from "@/lib/export";
 import { sendToBackground } from "@/lib/messaging";
@@ -25,13 +24,11 @@ import {
   type SubmitFormValues,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { GET_SESSION_SNAPSHOT_MESSAGE } from "@/vendor/capture-core/debugger/constants";
 import type {
   DebuggerActionEvent,
   DebuggerConsoleEvent,
   DebuggerNetworkEvent,
   DebuggerSSEEvent,
-  DebuggerSessionSnapshot,
   DebuggerWebSocketEvent,
 } from "@/vendor/capture-core/debugger/types";
 import {
@@ -340,6 +337,7 @@ export default function App() {
               screenshotFilenames: [],
               videoOpfsFilename: ring.videoOpfsFilename,
               replayOpfsFilename: null,
+              eventsOpfsFilename: null,
             };
             setSession(ringSession);
             setCounts({
@@ -424,19 +422,24 @@ export default function App() {
           }
         }
 
-        if (sess?.debuggerSessionId) {
+        // Load debugger events from OPFS. The background flushes the write chain
+        // before opening this tab, so the file is complete by the time we read it.
+        // In crash recovery the in-memory bridge is gone; OPFS is the only source.
+        if (sess?.eventsOpfsFilename) {
           try {
-            const snapshot = await sendDebuggerMessage<DebuggerSessionSnapshot | null>({
-              type: GET_SESSION_SNAPSHOT_MESSAGE,
-              payload: { sessionId: sess.debuggerSessionId },
-            });
-            if (snapshot?.events) {
+            const handle = await dir.getFileHandle(sess.eventsOpfsFilename);
+            const file = await handle.getFile();
+            const allEvents = (await file.text())
+              .split("\n")
+              .filter(Boolean)
+              .map((line) => JSON.parse(line) as { kind?: string });
+            if (allEvents.length > 0) {
               const consoleEvts: unknown[] = [];
               const networkEvts: unknown[] = [];
               const actionEvts: unknown[] = [];
               const wsEvts: unknown[] = [];
               const sseEvts: unknown[] = [];
-              for (const ev of snapshot.events) {
+              for (const ev of allEvents) {
                 if (ev.kind === "console") consoleEvts.push(ev);
                 else if (ev.kind === "network") networkEvts.push(ev);
                 else if (ev.kind === "action") actionEvts.push(ev);
@@ -453,7 +456,7 @@ export default function App() {
               prefillNotes(actionEvts as DebuggerActionEvent[]);
             }
           } catch {
-            // debugger snapshot unavailable; continue without it
+            // OPFS read failed — session exports with no events
           }
         }
 

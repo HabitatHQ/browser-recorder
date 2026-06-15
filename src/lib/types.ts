@@ -88,6 +88,10 @@ export interface Session {
   // OPFS filename for the rrweb replay events JSON (experimental). Null until
   // the session is stopped with replay capture enabled.
   replayOpfsFilename: string | null;
+  // OPFS filename for the NDJSON log of all debugger events (console, network,
+  // interactions, websocket, sse). Written incrementally during recording so
+  // the events survive a browser crash. Null until the first event batch arrives.
+  eventsOpfsFilename: string | null;
 }
 
 export interface SessionCounts {

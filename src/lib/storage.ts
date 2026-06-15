@@ -16,6 +16,10 @@ import {
 // colliding with other extensions that might share the same origin storage.
 export const OPFS_PREFIX = "chrome-recorder-";
 
+export function debuggerEventsOpfsFilename(sessionId: string): string {
+  return `${OPFS_PREFIX}events-${sessionId}.ndjson`;
+}
+
 export function screenshotOpfsFilename(sessionId: string, index: number): string {
   return `${OPFS_PREFIX}screenshot-${sessionId}-${index}.png`;
 }
@@ -52,6 +56,9 @@ const KEYS = {
   domSnapshotFilenames: "domSnapshotFilenames",
   ringConfig: "ringConfig",
   ringSnapshot: "ringSnapshot",
+  // Crash-safe copy of the active session in chrome.storage.local. Unlike
+  // chrome.storage.session this survives a browser crash. Cleared on discard.
+  crashSession: "crashSession",
 } as const;
 
 // Session state lives in chrome.storage.session (cleared on browser restart)
@@ -68,9 +75,19 @@ export async function setSession(session: Session | null): Promise<void> {
       KEYS.screenshotFilenames,
       KEYS.domSnapshotFilenames,
     ]);
+    await chrome.storage.local.remove(KEYS.crashSession);
   } else {
     await chrome.storage.session.set({ [KEYS.session]: session });
+    await chrome.storage.local.set({ [KEYS.crashSession]: session });
   }
+}
+
+// Returns the crash-safe session backup from chrome.storage.local. Only
+// consulted by initState() when chrome.storage.session is empty (i.e. the
+// browser restarted or crashed since the last recording).
+export async function getLocalBackupSession(): Promise<Session | null> {
+  const result = await chrome.storage.local.get(KEYS.crashSession);
+  return (result[KEYS.crashSession] as Session | undefined) ?? null;
 }
 
 export async function getCounts(): Promise<SessionCounts> {

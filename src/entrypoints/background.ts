@@ -22,8 +22,10 @@ import {
   OPFS_PREFIX,
   appendStandaloneDomSnapshotFilename,
   appendStandaloneScreenshotFilename,
+  debuggerEventsOpfsFilename,
   domSnapshotOpfsFilename,
   getCounts,
+  getLocalBackupSession,
   getRingConfig,
   getSession,
   getSettings,
@@ -67,6 +69,16 @@ let debuggerBridge: DebuggerBridge;
 let bgSession: Session | null = null;
 let bgCounts: SessionCounts = emptyCounts();
 let recorderTabId: number | null = null;
+let sessionFromCrashRecovery = false;
+
+// ─── Firefox video capture state ─────────────────────────────────────────────
+// On Firefox, tabCapture/offscreen are unavailable. A dedicated extension tab
+// calls getDisplayMedia, records to OPFS, and signals when done.
+let firefoxVideoTabId: number | null = null;
+// Resolved when fx-video-done arrives (or the tab closes); lets stop-session
+// await finalization before opening the report recorder.
+let firefoxVideoDoneResolve: (() => void) | null = null;
+let firefoxVideoDonePromise: Promise<void> = Promise.resolve();
 
 function emptyCounts(): SessionCounts {
   return {
@@ -107,6 +119,16 @@ let ringVideoChunks: RingVideoChunk[] = [];
 
 async function initState(): Promise<void> {
   bgSession = await getSession();
+  if (!bgSession) {
+    // chrome.storage.session was cleared — check for a crash-safe backup in
+    // chrome.storage.local. If one exists the previous session was interrupted
+    // by a crash (a clean stop/discard always clears both stores).
+    const backup = await getLocalBackupSession();
+    if (backup) {
+      bgSession = backup;
+      sessionFromCrashRecovery = true;
+    }
+  }
   bgCounts = await getCounts();
   ringConfig = await getRingConfig();
   await loadDiagnostics();
@@ -159,6 +181,41 @@ async function writeToOpfs(filename: string, bytes: Uint8Array): Promise<void> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await writable.write(bytes.buffer as ArrayBuffer);
   await writable.close();
+}
+
+// ─── Debugger event streaming to OPFS ────────────────────────────────────────
+// Every batch of raw events (console, network, interactions, websocket, sse)
+// is appended to a per-session NDJSON file in OPFS. This makes events
+// crash-resilient: they survive a browser crash even though the in-memory
+// debugger store (and chrome.storage.session) do not.
+let eventsWriteChain: Promise<void> = Promise.resolve();
+
+function appendDebuggerEventsToOpfs(events: unknown[]): void {
+  const session = bgSession;
+  if (!session) return;
+
+  // Assign the filename on the first write and persist so the recorder can
+  // locate the file even after a crash (via the chrome.storage.local backup).
+  const filename = debuggerEventsOpfsFilename(session.id);
+  if (!session.eventsOpfsFilename) {
+    session.eventsOpfsFilename = filename;
+    void persistSession();
+  }
+
+  const ndjson = `${events.map((e) => JSON.stringify(e)).join("\n")}\n`;
+  const bytes = new TextEncoder().encode(ndjson);
+  eventsWriteChain = eventsWriteChain
+    .then(async () => {
+      const dir = await navigator.storage.getDirectory();
+      const handle = await dir.getFileHandle(filename, { create: true });
+      const file = await handle.getFile();
+      const writable = await handle.createWritable({ keepExistingData: true });
+      await writable.write({ type: "write", position: file.size, data: bytes });
+      await writable.close();
+    })
+    .catch((err) => {
+      reportNonFatalError("Failed to append events to OPFS", err);
+    });
 }
 
 // ─── Replay event streaming ───────────────────────────────────────────────────
@@ -233,10 +290,71 @@ function isOffscreenMessage(msg: unknown): msg is OffscreenMsg {
   return typeof t === "string" && t.startsWith("offscreen-");
 }
 
+// ─── Firefox video messages ───────────────────────────────────────────────────
+
+type FxVideoMsg = { type: "fx-video-done"; filename: string };
+
+function isFxVideoMessage(msg: unknown): msg is FxVideoMsg {
+  return (
+    typeof msg === "object" &&
+    msg !== null &&
+    (msg as { type?: unknown }).type === "fx-video-done"
+  );
+}
+
+function handleFxVideoMessage(msg: FxVideoMsg): void {
+  if (bgSession) {
+    bgSession.videoOpfsFilename = msg.filename;
+    void persistSession();
+  }
+  firefoxVideoDoneResolve?.();
+  firefoxVideoDoneResolve = null;
+  firefoxVideoTabId = null;
+}
+
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
 export default defineBackground(async () => {
   await initState();
+
+  // ── Crash recovery ──────────────────────────────────────────────────────────
+  // If initState restored a session from the chrome.storage.local backup it
+  // means chrome.storage.session was cleared (crash or restart). Check whether
+  // the recording tab still exists: if it does, we just survived a service-
+  // worker suspend/restart mid-session and can continue normally; if not, the
+  // browser crashed during an active recording and we should offer recovery.
+  if (sessionFromCrashRecovery && bgSession) {
+    let tabStillExists = false;
+    try {
+      await chrome.tabs.get(bgSession.tabId);
+      tabStillExists = true;
+    } catch {
+      // tab is gone
+    }
+
+    if (tabStillExists) {
+      // SW was restarted but Chrome kept running — re-populate session storage.
+      await setSession(bgSession);
+    } else if (bgSession.status === "recording") {
+      // Browser crashed during an active recording. Transition to stopping and
+      // open the recorder so the user can export whatever was saved to OPFS.
+      bgSession.status = "stopping";
+      await eventsWriteChain; // no-op on fresh SW start, but ensures ordering
+      await flushDiagnostics();
+      await persistSession();
+      chrome.action.setBadgeText({ text: "" });
+      const recoverTab = await chrome.tabs.create({
+        url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
+      });
+      recorderTabId = recoverTab.id ?? null;
+    } else {
+      // Session was stopping when the crash occurred (recorder was already open)
+      // or had no data worth recovering — discard silently.
+      bgSession = null;
+      await setSession(null);
+    }
+  }
+
   await sweepOrphanedOpfsFiles();
 
   debuggerBridge = registerDebuggerBackgroundListeners(
@@ -272,7 +390,10 @@ export default defineBackground(async () => {
         if (websocketN > 0) bumpCount("websocket", websocketN);
         if (sseN > 0) bumpCount("sse", sseN);
         if (interactionsN > 0) bumpCount("interactions", interactionsN);
-        if (events.length > 0) bumpStage("debugger", "events", events.length);
+        if (events.length > 0) {
+          bumpStage("debugger", "events", events.length);
+          appendDebuggerEventsToOpfs(events);
+        }
 
         if (hasAutoTriggerAction) {
           if (bgSession.captureConfig.autoScreenshotOnInteraction) {
@@ -316,6 +437,10 @@ export default defineBackground(async () => {
       void handleOffscreenMessage(message);
       return false;
     }
+    if (isFxVideoMessage(message)) {
+      handleFxVideoMessage(message);
+      return false;
+    }
     handleMessage(message as BgMessage)
       .then(sendResponse)
       .catch((err: unknown) => {
@@ -332,6 +457,14 @@ export default defineBackground(async () => {
   });
 
   chrome.tabs.onRemoved.addListener(async (tabId) => {
+    if (tabId === firefoxVideoTabId) {
+      // User closed the video capture tab — treat as a clean stop.
+      firefoxVideoTabId = null;
+      firefoxVideoDoneResolve?.();
+      firefoxVideoDoneResolve = null;
+      return;
+    }
+
     if (tabId === recorderTabId) {
       recorderTabId = null;
       if (bgSession?.debuggerSessionId) {
@@ -421,7 +554,9 @@ async function handleMessage(message: BgMessage) {
         screenshotFilenames: [],
         videoOpfsFilename: null,
         replayOpfsFilename: null,
+        eventsOpfsFilename: null,
       };
+      eventsWriteChain = Promise.resolve();
 
       bgSession = session;
       bgCounts = emptyCounts();
@@ -457,7 +592,11 @@ async function handleMessage(message: BgMessage) {
       }
 
       if (message.captureConfig.video) {
-        await startVideoCapture(tab.id, bgSession);
+        if ("tabCapture" in chrome) {
+          await startVideoCapture(tab.id, bgSession);
+        } else {
+          await startFirefoxVideoCapture(bgSession);
+        }
         markStageOk("video", "start");
       }
 
@@ -478,7 +617,27 @@ async function handleMessage(message: BgMessage) {
         await stopReplayInTab(bgSession.tabId);
         await replayWriteChain;
       }
-      if (bgSession.captureConfig.video) await stopVideoCapture();
+      await eventsWriteChain;
+      if (bgSession.captureConfig.video) {
+        if ("tabCapture" in chrome) {
+          await stopVideoCapture();
+        } else if (firefoxVideoTabId) {
+          firefoxVideoDonePromise = new Promise((resolve) => {
+            firefoxVideoDoneResolve = resolve;
+          });
+          chrome.tabs.sendMessage(firefoxVideoTabId, { type: "fx-video-stop" }).catch(() => {
+            // Tab may already be closed
+            firefoxVideoDoneResolve?.();
+            firefoxVideoDoneResolve = null;
+          });
+          // Wait for finalization or timeout (10 s is generous for last WebM chunk flush)
+          await Promise.race([
+            firefoxVideoDonePromise,
+            new Promise<void>((r) => setTimeout(r, 10_000)),
+          ]);
+          firefoxVideoTabId = null;
+        }
+      }
       await flushDiagnostics();
       chrome.action.setBadgeText({ text: "" });
       const recorderTab = await chrome.tabs.create({
@@ -491,7 +650,16 @@ async function handleMessage(message: BgMessage) {
     case "discard-session": {
       recorderTabId = null;
       clearAutoCaptureTimers();
-      if (bgSession?.captureConfig.video) await stopVideoCapture();
+      if (bgSession?.captureConfig.video) {
+        if ("tabCapture" in chrome) {
+          await stopVideoCapture();
+        } else if (firefoxVideoTabId) {
+          chrome.tabs.remove(firefoxVideoTabId).catch(() => {});
+          firefoxVideoDoneResolve?.();
+          firefoxVideoDoneResolve = null;
+          firefoxVideoTabId = null;
+        }
+      }
       if (bgSession?.debuggerSessionId) {
         await debuggerBridge.discardSession(bgSession.debuggerSessionId);
       }
@@ -505,6 +673,9 @@ async function handleMessage(message: BgMessage) {
         }
         if (bgSession.replayOpfsFilename) {
           await dir.removeEntry(bgSession.replayOpfsFilename).catch(() => {});
+        }
+        if (bgSession.eventsOpfsFilename) {
+          await dir.removeEntry(bgSession.eventsOpfsFilename).catch(() => {});
         }
       }
       chrome.action.setBadgeText({ text: "" });
@@ -735,6 +906,21 @@ async function captureAutoDomSnapshot(tabId: number): Promise<void> {
 
 // ─── Video capture ────────────────────────────────────────────────────────────
 
+async function startFirefoxVideoCapture(session: Session): Promise<void> {
+  const filename = `${OPFS_PREFIX}fx-recording-${session.id}.webm`;
+  // Set the filename now so the recorder can find the file even if the video
+  // tab finishes before the recorder opens (or the session crashes).
+  session.videoOpfsFilename = filename;
+  await persistSession();
+
+  const tabTitle = encodeURIComponent(session.tabTitle ?? "");
+  const url = chrome.runtime.getURL(
+    `/firefox-video.html?sessionId=${session.id}&tabTitle=${tabTitle}&filename=${encodeURIComponent(filename)}`
+  );
+  const tab = await chrome.tabs.create({ url });
+  firefoxVideoTabId = tab.id ?? null;
+}
+
 async function startVideoCapture(tabId: number, session: Session): Promise<void> {
   if (!("tabCapture" in chrome) || !("offscreen" in chrome)) return;
 
@@ -836,6 +1022,7 @@ async function sweepOrphanedOpfsFiles(): Promise<void> {
       ...(sess?.screenshotFilenames ?? []),
       ...(sess?.videoOpfsFilename ? [sess.videoOpfsFilename] : []),
       ...(sess?.replayOpfsFilename ? [sess.replayOpfsFilename] : []),
+      ...(sess?.eventsOpfsFilename ? [sess.eventsOpfsFilename] : []),
       ...(sess ? sess.domSnapshotKeys.map((k) => domSnapshotOpfsFilename(sess.id, k)) : []),
     ]);
 
