@@ -15,6 +15,7 @@ import { createDebuggerSessionStore } from "./session-store";
 
 interface BridgeCaptureConfig {
   fullSelectorPath?: boolean;
+  performance?: boolean;
 }
 
 export interface DebuggerBridge {
@@ -122,7 +123,10 @@ export function registerDebuggerBackgroundListeners(
   return {
     startSession: async (tabId, captureConfig?) => {
       if (chrome.scripting?.executeScript) {
-        const config = { fullSelectorPath: captureConfig?.fullSelectorPath ?? true };
+        const config = {
+          fullSelectorPath: captureConfig?.fullSelectorPath ?? true,
+          performance: captureConfig?.performance ?? false,
+        };
         await chrome.scripting
           .executeScript({
             target: { tabId },

@@ -735,6 +735,25 @@ export default function App() {
                 onChange={() => toggleCapture("replay")}
               />
             </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-performance" className="font-medium">
+                    Performance metrics (beta)
+                  </Label>
+                  <InfoTooltip text="Captures Core Web Vitals (LCP, CLS, INP, FCP, TTFB), long tasks, navigation & resource timing, JS heap usage and frame rate via PerformanceObserver — no extra permissions. Adds a performance scorecard to report.html, a new timeline channel, and performance.json to the export. Beta: still validating metric fidelity." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Record Web Vitals & jank for performance reports · beta
+                </p>
+              </div>
+              <Switch
+                id="opt-performance"
+                checked={captureConfig.performance}
+                onChange={() => toggleCapture("performance")}
+              />
+            </div>
           </div>
         </section>
       </div>
