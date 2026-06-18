@@ -8,6 +8,7 @@ const baseInput = {
   durationMs: 5000,
   recordedIso: "2026-06-13T14:00:00.000Z",
   device: { browser: "UA", os: "macOS", viewport: { width: 1280, height: 800 } },
+  performance: null,
   screenshots: [],
   domSnapshots: [],
   video: null,
@@ -55,6 +56,24 @@ describe("buildReportHtml", () => {
   it("renders the empty-state when nothing was captured", () => {
     const html = buildReportHtml({ ...baseInput, timeline: [] });
     expect(html).toContain("No timeline events were captured");
+  });
+
+  it("renders the performance scorecard when a summary is provided", () => {
+    const html = buildReportHtml({
+      ...baseInput,
+      timeline: [],
+      performance: {
+        vitals: [{ name: "LCP", value: 2500, unit: "ms", rating: "needs-improvement" }],
+        longTasks: [{ timestamp: 0, durationMs: 180 }],
+        slowestResources: [{ name: "https://x/app.js", durationMs: 420 }],
+        peakHeapBytes: 5_000_000,
+        navigation: { loadMs: 1200 },
+        totals: { longTasks: 1, resources: 1 },
+      },
+    });
+    expect(html).toContain(">Performance<");
+    expect(html).toContain("LCP");
+    expect(html).toContain('"peakHeapBytes":5000000');
   });
 
   it("emits an inline viewer script that is syntactically valid JS", () => {

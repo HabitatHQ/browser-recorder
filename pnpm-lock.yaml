@@ -35,6 +35,9 @@ importers:
       tailwind-merge:
         specifier: ^3.3.0
         version: 3.6.0
+      web-vitals:
+        specifier: ^5.3.0
+        version: 5.3.0
     devDependencies:
       '@biomejs/biome':
         specifier: ^1.9.4
@@ -2380,6 +2383,9 @@ packages:
     resolution: {integrity: sha512-rQicL7OwuqWdQWI33JkSXKcp7cuv1mJG8u3jRQwx/8aDsmhbTHs9ZRmNYOL+LX0wX8edIEQX8jj4bB60GoXtKA==}
     engines: {node: '>=18.0.0', npm: '>=8.0.0'}
 
+  web-vitals@5.3.0:
+    resolution: {integrity: sha512-q6LWsLatGYZp5VGBIOvbTj6JBV2nOmC8KvWztXBmwJcfFAzhwKwbOxhUH306XY3CcaZDUlSmSuNPBsCn0bFu+g==}
+
   webpack-virtual-modules@0.6.2:
     resolution: {integrity: sha512-66/V2i5hQanC51vBQKPH4aI8NMAcBW59FVBs+rC7eGHupMyfn34q7rZIE+ETlJ+XTevqfUhVVBgSUNSW2flEUQ==}
 
@@ -4448,6 +4454,8 @@ snapshots:
       zip-dir: 2.0.0
     transitivePeerDependencies:
       - supports-color
+
+  web-vitals@5.3.0: {}
 
   webpack-virtual-modules@0.6.2: {}
 

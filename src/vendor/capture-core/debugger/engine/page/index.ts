@@ -4,6 +4,7 @@ import { INSTALL_FLAG } from "./constants";
 import { createPageDiagnostics } from "./diagnostics";
 import { createEventQueue } from "./event-queue";
 import { type SSEPayload, type WebSocketPayload, installNetworkCapture } from "./network";
+import { type PerformancePayload, installPerformanceCapture } from "./performance";
 import { createStringifyValue } from "./serializer";
 import type { ConsoleLevel } from "./types";
 import { installUncaughtExceptionCapture } from "./uncaught";
@@ -11,6 +12,8 @@ import { createNonFatalReporter, truncate } from "./utils";
 
 interface PageRuntimeConfig {
   fullSelectorPath?: boolean;
+  /** Capture Web Vitals / long tasks / resource timing / memory / fps (beta). */
+  performance?: boolean;
 }
 
 export function installDebuggerPageRuntime(config: PageRuntimeConfig = {}): void {
@@ -87,6 +90,12 @@ export function installDebuggerPageRuntime(config: PageRuntimeConfig = {}): void
     enqueueEvent({ kind: "sse", timestamp: Date.now(), ...payload });
   };
 
+  // Performance payloads carry their own (timeOrigin-derived) timestamp, so the
+  // long task / vital lands on the timeline when it happened, not when it flushed.
+  const postPerformance = (payload: PerformancePayload) => {
+    enqueueEvent({ kind: "performance", ...payload });
+  };
+
   installActionAndNavigationCapture({
     postAction,
     fullSelectorPath: config.fullSelectorPath ?? true,
@@ -99,6 +108,17 @@ export function installDebuggerPageRuntime(config: PageRuntimeConfig = {}): void
     installNetworkCapture({ diagnostics, reporter, postNetwork }, { postWebSocket, postSSE });
   } catch (error) {
     reporter.reportNonFatalError("Failed to install network capture in debugger runtime", error);
+  }
+
+  if (config.performance) {
+    try {
+      installPerformanceCapture({ reporter, postPerformance });
+    } catch (error) {
+      reporter.reportNonFatalError(
+        "Failed to install performance capture in debugger runtime",
+        error
+      );
+    }
   }
 
   const flushOnPageHide = () => {

@@ -83,6 +83,7 @@ interface DebuggerEvents {
   interactions: unknown[];
   websocket: unknown[];
   sse: unknown[];
+  performance: unknown[];
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -188,6 +189,7 @@ export default function App() {
     interactions: [],
     websocket: [],
     sse: [],
+    performance: [],
   });
   const [formValues, setFormValues] = useState<SubmitFormValues>({
     title: "Bug report",
@@ -211,6 +213,7 @@ export default function App() {
     screenshots: true,
     domSnapshots: true,
     replay: true,
+    performance: true,
     video: true,
   });
   const [videoBytes, setVideoBytes] = useState(0);
@@ -356,6 +359,7 @@ export default function App() {
               interactions: ring.interactions,
               websocket: [],
               sse: [],
+              performance: [],
             });
             setFormValues((v) => ({ ...v, title: ring.tabTitle ?? "Browser recording" }));
             prefillNotes(ring.interactions as DebuggerActionEvent[]);
@@ -439,12 +443,14 @@ export default function App() {
               const actionEvts: unknown[] = [];
               const wsEvts: unknown[] = [];
               const sseEvts: unknown[] = [];
+              const perfEvts: unknown[] = [];
               for (const ev of allEvents) {
                 if (ev.kind === "console") consoleEvts.push(ev);
                 else if (ev.kind === "network") networkEvts.push(ev);
                 else if (ev.kind === "action") actionEvts.push(ev);
                 else if (ev.kind === "websocket") wsEvts.push(ev);
                 else if (ev.kind === "sse") sseEvts.push(ev);
+                else if (ev.kind === "performance") perfEvts.push(ev);
               }
               setDebuggerEvents({
                 console: consoleEvts,
@@ -452,6 +458,7 @@ export default function App() {
                 interactions: actionEvts,
                 websocket: wsEvts,
                 sse: sseEvts,
+                performance: perfEvts,
               });
               prefillNotes(actionEvts as DebuggerActionEvent[]);
             }
@@ -745,6 +752,13 @@ export default function App() {
       key: "replay",
       label: "Session replay (experimental)",
       bytes: jsonBytes(replayEvents),
+      toggleable: true,
+    },
+    debuggerEvents.performance.length > 0 && {
+      key: "performance",
+      label: "Performance metrics (beta)",
+      count: debuggerEvents.performance.length,
+      bytes: jsonBytes(debuggerEvents.performance),
       toggleable: true,
     },
     session?.videoOpfsFilename && {

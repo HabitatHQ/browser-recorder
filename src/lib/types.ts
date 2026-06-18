@@ -12,6 +12,10 @@ export interface CaptureConfig {
   // Experimental: rrweb DOM session replay. Behind a hidden/experimental toggle
   // while we validate fidelity. See src/entrypoints/replay-record.ts.
   replay: boolean;
+  // Beta: capture performance metrics (Web Vitals, long tasks, resource/navigation
+  // timing, memory, fps) via PerformanceObserver. See
+  // src/vendor/capture-core/debugger/engine/page/performance.ts.
+  performance: boolean;
 }
 
 export interface NetworkFilterConfig {
@@ -47,6 +51,7 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   zipFolderNesting: true,
   zipTitleFilename: false,
   replay: false,
+  performance: false,
 };
 
 export const DEFAULT_NETWORK_FILTER: NetworkFilterConfig = {

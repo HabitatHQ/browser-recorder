@@ -3,11 +3,12 @@ import type {
   DebuggerActionEvent,
   DebuggerConsoleEvent,
   DebuggerNetworkEvent,
+  DebuggerPerformanceEvent,
   DebuggerSSEEvent,
   DebuggerWebSocketEvent,
   ReportInput,
 } from "@browser-recorder/core";
-import { buildReportMd, buildTimeline } from "@browser-recorder/core";
+import { buildReportMd, buildTimeline, summarizePerformance } from "@browser-recorder/core";
 import { Zip, ZipPassThrough } from "fflate";
 import { buildReplayHtml } from "./replay-html";
 import { buildReportHtml } from "./report-html";
@@ -51,6 +52,7 @@ export interface ExportInclude {
   screenshots: boolean;
   domSnapshots: boolean;
   replay: boolean;
+  performance: boolean;
   /** Bundle the recorded video into the ZIP. Off → grab it via the separate download. */
   video: boolean;
 }
@@ -62,6 +64,7 @@ const DEFAULT_INCLUDE: ExportInclude = {
   screenshots: true,
   domSnapshots: true,
   replay: true,
+  performance: true,
   video: true,
 };
 
@@ -77,6 +80,7 @@ export interface ExportInput {
     interactions: unknown[];
     websocket?: unknown[];
     sse?: unknown[];
+    performance?: unknown[];
   };
   /** rrweb session-replay events (experimental); omitted/empty → no replay files. */
   replayEvents?: unknown[];
@@ -180,6 +184,10 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
     include.network ? (debuggerEvents.websocket ?? []) : []
   ) as DebuggerWebSocketEvent[];
   const sse = (include.network ? (debuggerEvents.sse ?? []) : []) as DebuggerSSEEvent[];
+  const performance = (
+    include.performance ? (debuggerEvents.performance ?? []) : []
+  ) as DebuggerPerformanceEvent[];
+  const performanceSummary = performance.length > 0 ? summarizePerformance(performance) : null;
 
   const reportInput: ReportInput = {
     title: formValues.title,
@@ -237,6 +245,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
     interactions,
     websocket,
     sse,
+    performance,
   });
 
   const screenshotNames = include.screenshots
@@ -327,6 +336,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
           viewport: metadata.deviceInfo.viewport,
         },
         timeline,
+        performance: performanceSummary,
         screenshots: screenshotNames,
         domSnapshots: domSnapshotNames,
         video: videoName,
@@ -349,6 +359,14 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
 
     if (interactions.length > 0) {
       addText(zip, `${prefix}interactions.json`, JSON.stringify(interactions, null, 2));
+    }
+
+    if (performance.length > 0) {
+      addText(
+        zip,
+        `${prefix}performance.json`,
+        JSON.stringify({ summary: performanceSummary, events: performance }, null, 2)
+      );
     }
 
     if (include.screenshots) {

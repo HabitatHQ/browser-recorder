@@ -4,7 +4,7 @@
 // other artifacts (screenshots, DOM snapshots, video, replay) by relative path
 // — so it works as soon as the ZIP is unzipped. The event data is inlined as
 // JSON; images/video/dom are referenced rather than embedded to keep it light.
-import type { TimelineEntry } from "@browser-recorder/core";
+import type { PerformanceSummary, TimelineEntry } from "@browser-recorder/core";
 
 export interface ReportHtmlInput {
   title: string;
@@ -13,6 +13,8 @@ export interface ReportHtmlInput {
   recordedIso: string;
   device: { browser: string; os: string; viewport: { width: number; height: number } };
   timeline: TimelineEntry[];
+  /** Performance scorecard data, or null when perf capture was off/empty. */
+  performance: PerformanceSummary | null;
   /** Relative filenames within the ZIP. */
   screenshots: string[];
   domSnapshots: string[];
@@ -43,6 +45,7 @@ export function buildReportHtml(input: ReportHtmlInput): string {
     recordedIso: input.recordedIso,
     device: input.device,
     timeline: input.timeline,
+    performance: input.performance,
     screenshots: input.screenshots,
     domSnapshots: input.domSnapshots,
     video: input.video,
@@ -82,6 +85,19 @@ export function buildReportHtml(input: ReportHtmlInput): string {
   .b-action { background: #2e2940; color: #c3a8f0; }
   .b-websocket { background: #1f3a34; color: #7fd1bd; }
   .b-sse { background: #3a2f1f; color: #d8b67f; }
+  .b-performance { background: #1f3326; color: #8fd99f; }
+  .scores { display: flex; flex-wrap: wrap; gap: 10px; }
+  .score { background: #1b1e26; border: 1px solid #2a2e3a; border-radius: 8px; padding: 8px 12px; min-width: 88px; }
+  .score .k { font-size: 11px; color: #9aa0aa; text-transform: uppercase; letter-spacing: .04em; }
+  .score .v { font-size: 18px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .score.good .v { color: #7fd1a0; }
+  .score.needs-improvement .v { color: #e0c074; }
+  .score.poor .v { color: #f08b8b; }
+  .perf-tables { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 14px; }
+  .perf-tables h3 { font-size: 12px; color: #9aa0aa; margin: 0 0 6px; font-weight: 600; }
+  .perf-tables table { border-collapse: collapse; font-size: 12px; }
+  .perf-tables td { padding: 2px 14px 2px 0; font-variant-numeric: tabular-nums; vertical-align: top; }
+  .perf-tables td.name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lvl-error { color: #f08b8b; }
   .lvl-warn { color: #e0c074; }
   .summary { min-width: 0; }
@@ -106,6 +122,8 @@ export function buildReportHtml(input: ReportHtmlInput): string {
 
   <div id="problemsWrap"></div>
 
+  <div id="perfWrap"></div>
+
   <h2>Timeline</h2>
   <div class="controls" id="controls">
     <label><input type="checkbox" data-kind="console" checked> Console</label>
@@ -113,6 +131,7 @@ export function buildReportHtml(input: ReportHtmlInput): string {
     <label><input type="checkbox" data-kind="action" checked> Interactions</label>
     <label><input type="checkbox" data-kind="websocket" checked> WebSocket</label>
     <label><input type="checkbox" data-kind="sse" checked> SSE</label>
+    <label><input type="checkbox" data-kind="performance" checked> Performance</label>
     <label><input type="checkbox" id="errorsOnly"> Errors only</label>
     <input type="search" id="search" placeholder="Filter text…" />
   </div>
@@ -138,6 +157,25 @@ export function buildReportHtml(input: ReportHtmlInput): string {
     if (ms == null) return "?";
     var s = Math.floor(ms/1000), m = Math.floor(s/60);
     return m > 0 ? m + "m " + (s%60) + "s" : s + "s";
+  }
+  function fmtMs(ms) {
+    if (ms == null) return "—";
+    return ms < 1000 ? Math.round(ms) + " ms" : (ms / 1000).toFixed(2) + " s";
+  }
+  function fmtBytes(b) {
+    if (b == null) return "—";
+    return b >= 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.round(b / 1024) + " KB";
+  }
+  function fmtVital(v) { return v.unit === "score" ? Number(v.value).toFixed(3) : fmtMs(v.value); }
+  // One-line label for a performance event on the timeline.
+  function perfLabel(e) {
+    if (e.metric === "web-vital") return e.name + " " + fmtVital({ unit: e.unit, value: e.value }) + (e.rating ? " (" + e.rating + ")" : "");
+    if (e.metric === "long-task") return "long task " + fmtMs(e.value);
+    if (e.metric === "resource") return "resource " + fmtMs(e.value) + " · " + e.name;
+    if (e.metric === "measure") return "measure " + fmtMs(e.value) + " · " + e.name;
+    if (e.metric === "memory") return "heap " + fmtBytes(e.value);
+    if (e.metric === "frame") return e.value + " fps";
+    return e.name + " " + e.value;
   }
 
   // Header
@@ -187,6 +225,10 @@ export function buildReportHtml(input: ReportHtmlInput): string {
     } else if (k === "sse") {
       html = '<span class="mono">' + esc(e.eventType || e.event) + ' ' + esc(e.data || e.url) + '</span>';
       text = (e.eventType || e.event) + " " + (e.data || e.url);
+    } else if (k === "performance") {
+      var poor = e.rating === "poor" || (e.metric === "long-task" && e.value >= 100);
+      html = '<span class="mono ' + (poor ? "lvl-warn" : "") + '">' + esc(perfLabel(e)) + '</span>';
+      text = e.metric + " " + e.name + " " + e.value;
     }
     return { html: html, sub: sub, detail: detail, text: text.toLowerCase() };
   }
@@ -206,7 +248,7 @@ export function buildReportHtml(input: ReportHtmlInput): string {
     var detail = s.detail ? '<details><summary>details</summary><pre>' + esc(s.detail) + '</pre></details>' : "";
     row.innerHTML =
       '<div class="off">' + fmtOff(entry.offsetMs) + '</div>' +
-      '<div class="badge b-' + entry.kind + '">' + (entry.kind === "action" ? "interact" : entry.kind) + '</div>' +
+      '<div class="badge b-' + entry.kind + '">' + (entry.kind === "action" ? "interact" : entry.kind === "performance" ? "perf" : entry.kind) + '</div>' +
       '<div class="summary"><div class="main">' + s.html + from + '</div>' +
       (s.sub ? '<div class="sub mono">' + s.sub + '</div>' : "") + detail + '</div>';
     tl.appendChild(row);
@@ -248,6 +290,38 @@ export function buildReportHtml(input: ReportHtmlInput): string {
       }).join("") + '</div>';
   } else {
     pw.innerHTML = '<h2>Problems</h2><div class="panel problems none">No errors or failed requests were captured.</div>';
+  }
+
+  // Performance scorecard
+  var perf = R.performance;
+  if (perf) {
+    var cards = (perf.vitals || []).map(function (v) {
+      return '<div class="score ' + (v.rating || "") + '"><div class="k">' + esc(v.name) +
+        '</div><div class="v">' + esc(fmtVital(v)) + '</div></div>';
+    });
+    if (perf.navigation && perf.navigation.loadMs != null)
+      cards.push('<div class="score"><div class="k">Load</div><div class="v">' + esc(fmtMs(perf.navigation.loadMs)) + '</div></div>');
+    if (perf.peakHeapBytes != null)
+      cards.push('<div class="score"><div class="k">Peak heap</div><div class="v">' + esc(fmtBytes(perf.peakHeapBytes)) + '</div></div>');
+
+    var tables = [];
+    if (perf.longTasks && perf.longTasks.length) {
+      tables.push('<div><h3>Longest tasks (' + perf.totals.longTasks + ')</h3><table><tbody>' +
+        perf.longTasks.map(function (t) { return '<tr><td>' + esc(fmtMs(t.durationMs)) + '</td></tr>'; }).join("") +
+        '</tbody></table></div>');
+    }
+    if (perf.slowestResources && perf.slowestResources.length) {
+      tables.push('<div><h3>Slowest resources (' + perf.totals.resources + ')</h3><table><tbody>' +
+        perf.slowestResources.map(function (r) {
+          return '<tr><td>' + esc(fmtMs(r.durationMs)) + '</td><td class="name">' + esc(r.name) + '</td></tr>';
+        }).join("") + '</tbody></table></div>');
+    }
+
+    if (cards.length || tables.length) {
+      $("perfWrap").innerHTML = '<h2>Performance</h2><div class="panel">' +
+        (cards.length ? '<div class="scores">' + cards.join("") + '</div>' : "") +
+        (tables.length ? '<div class="perf-tables">' + tables.join("") + '</div>' : "") + '</div>';
+    }
   }
 
   // Screenshots
