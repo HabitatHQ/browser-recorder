@@ -146,6 +146,7 @@ export interface RingSnapshot {
   console: unknown[];
   network: unknown[];
   interactions: unknown[];
+  performance: unknown[];
   videoOpfsFilename: string | null;
 }
 

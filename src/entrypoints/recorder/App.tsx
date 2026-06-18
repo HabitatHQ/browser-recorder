@@ -359,7 +359,7 @@ export default function App() {
               interactions: ring.interactions,
               websocket: [],
               sse: [],
-              performance: [],
+              performance: ring.performance ?? [],
             });
             setFormValues((v) => ({ ...v, title: ring.tabTitle ?? "Browser recording" }));
             prefillNotes(ring.interactions as DebuggerActionEvent[]);
