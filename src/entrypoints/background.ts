@@ -115,6 +115,7 @@ let ringVideoActive = false;
 let ringConsoleEvents: TimestampedEvent[] = [];
 let ringNetworkEvents: TimestampedEvent[] = [];
 let ringInteractionEvents: TimestampedEvent[] = [];
+let ringPerformanceEvents: TimestampedEvent[] = [];
 let ringVideoChunks: RingVideoChunk[] = [];
 
 async function initState(): Promise<void> {
@@ -421,6 +422,7 @@ export default defineBackground(async () => {
           else if (ev.kind === "network" || ev.kind === "websocket" || ev.kind === "sse")
             ringNetworkEvents.push(timestamped);
           else if (ev.kind === "action") ringInteractionEvents.push(timestamped);
+          else if (ev.kind === "performance") ringPerformanceEvents.push(timestamped);
         }
       }
     },
@@ -1050,11 +1052,17 @@ function pruneRingBuffer(): void {
   ringConsoleEvents = ringConsoleEvents.filter((e) => e.timestamp >= dataCutoff);
   ringNetworkEvents = ringNetworkEvents.filter((e) => e.timestamp >= dataCutoff);
   ringInteractionEvents = ringInteractionEvents.filter((e) => e.timestamp >= dataCutoff);
+  ringPerformanceEvents = ringPerformanceEvents.filter((e) => e.timestamp >= dataCutoff);
   ringVideoChunks = ringVideoChunks.filter((c) => c.timestamp >= videoCutoff);
 }
 
 function getRingStatus(): RingStatus {
-  const allEvents = [...ringConsoleEvents, ...ringNetworkEvents, ...ringInteractionEvents];
+  const allEvents = [
+    ...ringConsoleEvents,
+    ...ringNetworkEvents,
+    ...ringInteractionEvents,
+    ...ringPerformanceEvents,
+  ];
   const oldest = allEvents.length > 0 ? Math.min(...allEvents.map((e) => e.timestamp)) : null;
   return {
     active: ringActive,
@@ -1124,8 +1132,12 @@ async function startRingOnTab(tabId: number): Promise<void> {
     ringTabTitle = tab.title;
     ringActive = true;
 
+    // The ring honors the performance beta toggle so always-on capture matches
+    // what an explicit session would collect.
+    const { captureConfig } = await getSettings();
     const { sessionId: dbgId } = await debuggerBridge.startSession(tabId, {
       fullSelectorPath: true,
+      performance: captureConfig.performance,
     });
     ringDebuggerSessionId = dbgId;
 
@@ -1152,6 +1164,7 @@ async function stopRingOnTab(): Promise<void> {
   ringConsoleEvents = [];
   ringNetworkEvents = [];
   ringInteractionEvents = [];
+  ringPerformanceEvents = [];
   ringVideoChunks = [];
 }
 
@@ -1169,6 +1182,7 @@ async function rotateRingToTab(newTabId: number): Promise<void> {
     ringConsoleEvents = [];
     ringNetworkEvents = [];
     ringInteractionEvents = [];
+    ringPerformanceEvents = [];
     ringVideoChunks = [];
     ringActive = false;
   }
@@ -1200,6 +1214,7 @@ async function snapshotRingAndExport(): Promise<void> {
     console: ringConsoleEvents.map((e) => e.event),
     network: ringNetworkEvents.map((e) => e.event),
     interactions: ringInteractionEvents.map((e) => e.event),
+    performance: ringPerformanceEvents.map((e) => e.event),
     videoOpfsFilename,
   };
 
