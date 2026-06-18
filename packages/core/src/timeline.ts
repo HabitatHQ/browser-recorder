@@ -3,11 +3,12 @@ import type {
   DebuggerConsoleEvent,
   DebuggerEvent,
   DebuggerNetworkEvent,
+  DebuggerPerformanceEvent,
   DebuggerSSEEvent,
   DebuggerWebSocketEvent,
 } from "./types.js";
 
-export type TimelineKind = "console" | "network" | "action" | "websocket" | "sse";
+export type TimelineKind = "console" | "network" | "action" | "websocket" | "sse" | "performance";
 
 export interface TimelineEntry {
   /** 1-based position in the merged, timestamp-sorted timeline. */
@@ -33,6 +34,7 @@ export interface TimelineInput {
   interactions: DebuggerActionEvent[];
   websocket?: DebuggerWebSocketEvent[];
   sse?: DebuggerSSEEvent[];
+  performance?: DebuggerPerformanceEvent[];
 }
 
 export interface TimelineOptions {
@@ -54,7 +56,7 @@ export function buildTimeline(input: TimelineInput, options: TimelineOptions = {
   const { startedAt } = input;
 
   // Channels are pushed in a fixed order so equal-timestamp ties resolve
-  // deterministically (network → action → console → websocket → sse).
+  // deterministically (network → action → console → websocket → sse → performance).
   const staged: Array<{ kind: TimelineKind; event: DebuggerEvent; order: number }> = [];
   let order = 0;
   const stage = (kind: TimelineKind, events: DebuggerEvent[] | undefined) => {
@@ -65,6 +67,7 @@ export function buildTimeline(input: TimelineInput, options: TimelineOptions = {
   stage("console", input.console);
   stage("websocket", input.websocket);
   stage("sse", input.sse);
+  stage("performance", input.performance);
 
   staged.sort((a, b) => a.event.timestamp - b.event.timestamp || a.order - b.order);
 

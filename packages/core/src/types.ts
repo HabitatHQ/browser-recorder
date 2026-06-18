@@ -55,12 +55,40 @@ export interface DebuggerSSEEvent {
   lastEventId?: string;
 }
 
+/** Source of a performance sample. */
+export type PerfMetricType =
+  | "web-vital" // Core Web Vitals (LCP, CLS, INP, FCP, TTFB)
+  | "long-task" // PerformanceObserver "longtask" entries (>50ms main-thread blocks)
+  | "navigation" // PerformanceNavigationTiming (one per document load)
+  | "resource" // PerformanceResourceTiming entries
+  | "measure" // User Timing performance.measure() entries
+  | "memory" // periodic JS heap sample
+  | "frame"; // requestAnimationFrame jank sample (fps over a window)
+
+export interface DebuggerPerformanceEvent {
+  kind: "performance";
+  timestamp: number;
+  metric: PerfMetricType;
+  /**
+   * Metric name. For web-vitals one of LCP/CLS/INP/FCP/TTFB; for long-task
+   * "longtask"; for resource/measure the entry name; "memory"; "fps".
+   */
+  name: string;
+  /** Primary value: ms for timings, unitless score for CLS, bytes for memory, fps for frame. */
+  value: number;
+  unit: "ms" | "score" | "bytes" | "fps" | "count";
+  /** Web Vitals rating bucket, when the source provides one. */
+  rating?: "good" | "needs-improvement" | "poor";
+  metadata?: Record<string, unknown>;
+}
+
 export type DebuggerEvent =
   | DebuggerActionEvent
   | DebuggerConsoleEvent
   | DebuggerNetworkEvent
   | DebuggerWebSocketEvent
-  | DebuggerSSEEvent;
+  | DebuggerSSEEvent
+  | DebuggerPerformanceEvent;
 
 export interface SubmitFormValues {
   title: string;
