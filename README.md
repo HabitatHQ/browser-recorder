@@ -1,53 +1,68 @@
 # Browser Recorder
 
-A browser extension (Chrome + Firefox) for capturing debug data and exporting self-contained browser recordings. No server, no account, no cloud.
+A browser extension (Chrome + Firefox) that captures everything you need to file a bug report — console, network, interactions, DOM, screenshots, and optional video — and bundles it into a self-contained `.zip` you can hand to a teammate or paste into an issue.
 
-Captures console logs, network requests, interactions, DOM snapshots, screenshots, and optional video — all bundled into a local ZIP. Includes an always-on **ring buffer** that keeps the last N minutes in the background, so you can capture what just happened without having started a session first.
+No server, no account, no cloud.
 
-Download the latest release from [Releases](../../releases). See [GUIDE.md](GUIDE.md) for installation and usage.
-
-## Screenshot
-
-Open the popup and start a session (or grab a one-off screenshot / DOM snapshot).
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue) ![Version](https://img.shields.io/badge/version-0.3.11-orange) ![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-4285F4) ![Firefox MV3](https://img.shields.io/badge/Firefox-MV3-FF7139)
 
 ![Popup](docs/store/popup.png)
 
-See [GUIDE.md](GUIDE.md#usage) for the full annotate → review → export flow and the settings screen.
+## What you get
 
-## Development
+A single `.zip` per capture, named `browser-recording-{title}-{date}.zip`, containing a self-contained `report.html` viewer you can open in any browser. It includes:
 
-```sh
-pnpm install
-pnpm dev        # Chrome (hot-reload via WXT)
-pnpm build      # Chrome MV3 (unpacked)
-pnpm package    # build + zip for distribution
-pnpm check      # TypeScript
-```
+- **Console** — `log`/`warn`/`error`/`info`/`debug` from page JS, plus uncaught errors
+- **Network** — every XHR/fetch request and response (headers + body)
+- **WebSocket & SSE** — lifecycle and message frames (payloads truncated to 4 kB)
+- **Interactions** — clicks, inputs, navigations with element metadata
+- **DOM snapshots** — serialised HTML with inlined same-origin styles
+- **Screenshots** — manual captures with an annotation canvas (arrow, rectangle, blur)
+- **Video** — tab recording via MediaRecorder (Chrome only)
+- **Ring buffer** — always-on background capture so you can export what *just happened* even if you didn't start a session
 
-To install: load `.output/chrome-mv3/` as an unpacked extension in `chrome://extensions`. See [GUIDE.md](GUIDE.md#installation) for details.
+Before exporting, the report tab also lets you redact or drop sensitive network entries and uncheck large artifacts (e.g. video) to keep the zip small.
 
-Screenshots are generated from the built extension with `pnpm screenshots` (see [`scripts/capture-screenshots.mjs`](scripts/capture-screenshots.mjs)), which writes README/guide crops to `docs/screenshots/` and 1280×800 store-listing images to `docs/store/`.
+## Install
 
-## Publishing
+Grab the latest `chrome-*.zip` from [Releases](../../releases), extract it, then load the folder as an unpacked extension:
+
+- **Chrome:** `chrome://extensions` → enable *Developer mode* → *Load unpacked* → pick the extracted folder.
+- **Firefox:** `about:debugging#/runtime/this-firefox` → *Load Temporary Add-on* → pick `manifest.json` inside the folder.
+
+Pin the icon for quick access. Full step-by-step (including Firefox quirks and keyboard shortcuts) is in [GUIDE.md](GUIDE.md).
+
+## Quick start
+
+1. Click the extension icon (or press **Alt+Shift+R**). The icon badge turns red.
+2. Reproduce the bug — click around, do the things.
+3. Click the icon again (or **Alt+Shift+S**). The report tab opens.
+4. Edit the pre-filled reproduction notes, redact anything sensitive, and click **Export ZIP**.
+
+For "I didn't start a session but something just went wrong" — toggle **Ring recording** in the popup. It keeps the last 5 minutes in the background; click **Export ring** when you need it.
+
+## CLI
+
+A Node CLI is included for scripted repros and CI. It captures the same data via Playwright and exports a (slightly slimmer) zip. See [cli/README.md](cli/README.md).
+
+## Contributing / building from source
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the dev workflow, scripts, screenshot generation, and the release process.
+
+## Publishing (maintainers)
 
 See [PUBLISH.md](PUBLISH.md) for the Chrome Web Store build, upload, and listing workflow.
 
-## Known gaps / TODO
+## Status
 
-See [TODOS.md](TODOS.md).
-
-## Attribution
-
-The capture engine in `src/vendor/capture-core/` is adapted from [crikket](https://github.com/redpangilinan/crikket) by [redpangilinan](https://github.com/redpangilinan).
+Pre-1.0 — feature set and APIs are still settling. See [TODOS.md](TODOS.md) for what's in flight.
 
 ## License
 
-[AGPL-3.0](LICENSE). The vendored capture engine from crikket is also AGPL-3.0, which is why this license applies to the whole project.
+[AGPL-3.0](LICENSE).
 
-## Stack
+This project includes code adapted from [crikket](https://github.com/redpangilinan/crikket) by [redpangilinan](https://github.com/redpangilinan), also AGPL-3.0. That license applies to the whole project as a result.
 
-- [WXT](https://wxt.dev) — extension framework (Chrome MV3 + Firefox MV3)
-- [React 19](https://react.dev) + TypeScript
-- [Tailwind CSS v4](https://tailwindcss.com)
-- [fflate](https://github.com/101arrowz/fflate) — in-browser ZIP
-- [Biome](https://biomejs.dev) — linting
+## Third-party
+
+- [WXT](https://wxt.dev), [React](https://react.dev), [Tailwind CSS](https://tailwindcss.com), [rrweb](https://github.com/rrweb-io/rrweb), [fflate](https://github.com/101arrowz/fflate), [Playwright](https://playwright.dev), [Biome](https://biomejs.dev). Full list and versions in [DEVELOPMENT.md](DEVELOPMENT.md#stack).
