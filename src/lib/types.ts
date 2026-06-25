@@ -22,6 +22,11 @@ export interface CaptureConfig {
   // existing settings plumbing. Gates the "Open in side panel" affordance in the
   // popup. See src/lib/surface.tsx and src/entrypoints/sidepanel/.
   sidePanel: boolean;
+  // Experimental: strip `autofocus` from replay events before handing them to
+  // rrweb's Replayer, silencing Chrome's "Blocked autofocusing… frame is
+  // sandboxed" console warning on replay load. Replay-viewing concern only (rides
+  // in CaptureConfig to reuse settings plumbing). See src/lib/replay-preprocess.ts.
+  replayStripAutofocus: boolean;
 }
 
 export interface NetworkFilterConfig {
@@ -59,6 +64,7 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   replay: false,
   performance: false,
   sidePanel: false,
+  replayStripAutofocus: false,
 };
 
 export const DEFAULT_NETWORK_FILTER: NetworkFilterConfig = {

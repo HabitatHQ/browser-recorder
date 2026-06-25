@@ -197,6 +197,8 @@ export default function App() {
     notes: "",
   });
   const [replayEvents, setReplayEvents] = useState<unknown[]>([]);
+  // Experimental: silence rrweb's sandboxed-iframe autofocus warning on replay.
+  const [replayStripAutofocus, setReplayStripAutofocus] = useState(false);
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [exportFilename, setExportFilename] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -605,6 +607,22 @@ export default function App() {
   useEffect(() => {
     if (state === "success") setCloseCountdown(AUTO_CLOSE_SECONDS);
   }, [state]);
+
+  // Load the current replay-preprocessing flag (a replay-viewing concern, so we
+  // read live settings rather than the value baked into the session at record time).
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { captureConfig } = await sendToBackground<{
+          captureConfig: CaptureConfig;
+          networkFilter: NetworkFilterConfig;
+        }>({ type: "get-settings" });
+        setReplayStripAutofocus(captureConfig.replayStripAutofocus);
+      } catch {
+        // Settings unavailable — leave the flag at its default (off).
+      }
+    })();
+  }, []);
 
   // Tick the auto-close countdown and close the tab at zero.
   useEffect(() => {
@@ -1177,7 +1195,7 @@ export default function App() {
                   experimental
                 </Badge>
               </div>
-              <ReplayPlayer events={replayEvents} />
+              <ReplayPlayer events={replayEvents} stripAutofocus={replayStripAutofocus} />
             </div>
           )}
         </form>

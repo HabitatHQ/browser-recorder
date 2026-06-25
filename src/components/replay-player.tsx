@@ -1,4 +1,5 @@
 import "rrweb/dist/style.css";
+import { stripReplayAutofocus } from "@/lib/replay-preprocess";
 import { useEffect, useRef, useState } from "react";
 import { Replayer } from "rrweb";
 
@@ -12,7 +13,13 @@ function fmt(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-export function ReplayPlayer({ events }: { events: unknown[] }) {
+export function ReplayPlayer({
+  events,
+  stripAutofocus = false,
+}: {
+  events: unknown[];
+  stripAutofocus?: boolean;
+}) {
   const frameRef = useRef<HTMLDivElement>(null);
   const replayerRef = useRef<Replayer | null>(null);
   const rafRef = useRef(0);
@@ -28,10 +35,16 @@ export function ReplayPlayer({ events }: { events: unknown[] }) {
     frame.innerHTML = "";
     setError(null);
 
+    const replayEvents = stripAutofocus ? stripReplayAutofocus(events) : events;
+
     let replayer: Replayer;
     try {
       // biome-ignore lint/suspicious/noExplicitAny: events are loaded from storage as plain JSON.
-      replayer = new Replayer(events as any, { root: frame, showWarning: false, mouseTail: false });
+      replayer = new Replayer(replayEvents as any, {
+        root: frame,
+        showWarning: false,
+        mouseTail: false,
+      });
     } catch (err) {
       setError(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
       return;
@@ -69,7 +82,7 @@ export function ReplayPlayer({ events }: { events: unknown[] }) {
       frame.innerHTML = "";
       replayerRef.current = null;
     };
-  }, [events]);
+  }, [events, stripAutofocus]);
 
   const tick = () => {
     const r = replayerRef.current;

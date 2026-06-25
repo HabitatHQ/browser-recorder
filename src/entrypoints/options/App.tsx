@@ -836,6 +836,25 @@ export default function App() {
                 onChange={() => toggleCapture("sidePanel")}
               />
             </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-replay-strip-autofocus" className="font-medium">
+                    Quiet replay autofocus (experimental)
+                  </Label>
+                  <InfoTooltip text="Strips the autofocus attribute from session-replay events before playback. rrweb replays into a sandboxed iframe without script permission, so Chrome logs a 'Blocked autofocusing… frame is sandboxed' warning whenever a recorded page had an autofocused field. This silences that console noise; it doesn't change what the replay shows. Only relevant when Session replay is on." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Suppress the sandboxed-iframe autofocus warning during replay · prototype
+                </p>
+              </div>
+              <Switch
+                id="opt-replay-strip-autofocus"
+                checked={captureConfig.replayStripAutofocus}
+                onChange={() => toggleCapture("replayStripAutofocus")}
+              />
+            </div>
           </div>
         </section>
 
