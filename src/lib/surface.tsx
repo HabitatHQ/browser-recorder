@@ -47,12 +47,14 @@ export function canOpenSidePanel(): boolean {
   return (typeof chrome !== "undefined" && !!chrome.sidePanel) || !!getSidebarAction();
 }
 
-// Must be called from a user gesture (e.g. a popup button click).
-export async function openSidePanel(): Promise<void> {
+// Must be called synchronously from a user gesture (a popup button click).
+// chrome.sidePanel.open() rejects if the user activation is gone, and *any*
+// awaited call beforehand (e.g. chrome.windows.getCurrent) consumes it — so the
+// caller pre-fetches the windowId/tabId and we invoke open() with no await first.
+export function openSidePanel(options: chrome.sidePanel.OpenOptions): Promise<void> {
   if (typeof chrome !== "undefined" && chrome.sidePanel) {
-    const win = await chrome.windows.getCurrent();
-    if (win.id != null) await chrome.sidePanel.open({ windowId: win.id });
-    return;
+    return chrome.sidePanel.open(options);
   }
-  await getSidebarAction()?.open();
+  const sidebar = getSidebarAction();
+  return sidebar ? sidebar.open() : Promise.resolve();
 }

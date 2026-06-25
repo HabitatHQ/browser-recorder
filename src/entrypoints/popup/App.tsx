@@ -448,18 +448,26 @@ export default function App() {
   const [initialConfig, setInitialConfig] = useState<CaptureConfig>(DEFAULT_CAPTURE_CONFIG);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
+  const [currentWindowId, setCurrentWindowId] = useState<number | null>(null);
 
   // Offer promotion to the side panel only from the popup, only when the flag is
   // on, and only where the browser supports it (Chromium 114+ / Firefox).
   const showOpenInPanel =
     surface === "popup" && settingsLoaded && initialConfig.sidePanel && canOpenSidePanel();
-  const promoteToSidePanel = async () => {
-    try {
-      await openSidePanel();
-      window.close();
-    } catch {
-      // Opening can fail outside a user gesture; leave the popup open as a fallback.
-    }
+  // Not async: chrome.sidePanel.open() must run synchronously in the click
+  // handler or it loses the user activation and rejects. The window/tab id were
+  // pre-fetched on mount precisely so we don't have to await here.
+  const promoteToSidePanel = () => {
+    const options =
+      currentWindowId != null
+        ? { windowId: currentWindowId }
+        : currentTabId != null
+          ? { tabId: currentTabId }
+          : null;
+    if (!options) return;
+    openSidePanel(options)
+      .then(() => window.close())
+      .catch((e) => console.warn("Failed to open side panel", e));
   };
 
   useEffect(() => {
@@ -472,6 +480,7 @@ export default function App() {
       .query({ active: true, currentWindow: true })
       .then(([tab]) => {
         if (tab?.id != null) setCurrentTabId(tab.id);
+        if (tab?.windowId != null) setCurrentWindowId(tab.windowId);
       })
       .catch(() => {});
   }, []);
