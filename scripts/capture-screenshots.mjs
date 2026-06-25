@@ -43,14 +43,6 @@ const SHOTS = [
     waitFor: "text=Start session",
   },
   {
-    // The side panel reuses the popup UI (full-width) — rendered standalone the
-    // same way, at a taller side-panel-like viewport.
-    name: "sidepanel",
-    page: "sidepanel.html",
-    viewport: { width: 400, height: 760 },
-    waitFor: "text=Start session",
-  },
-  {
     name: "options",
     page: "options.html",
     viewport: { width: 760, height: 1100 },
@@ -129,6 +121,63 @@ async function captureAnnotation(context, extId, samplePng) {
   return shot;
 }
 
+// Renders the side panel and composites it docked on the right of a browser
+// window showing the page being recorded — because rendered standalone the panel
+// is identical to the popup; the docking is what makes it read as a side panel.
+async function captureSidePanel(context, extId, pagePng) {
+  const panel = await context.newPage();
+  await panel.setViewportSize({ width: 400, height: 760 });
+  await panel.goto(`chrome-extension://${extId}/sidepanel.html`, {
+    waitUntil: "networkidle",
+  });
+  await panel.waitForSelector("text=Start session", { timeout: 15_000 }).catch(() => {
+    console.warn("  (side panel content not found)");
+  });
+  await panel.waitForTimeout(500);
+  const panelPng = await panel.screenshot({ type: "png" });
+  await panel.close();
+
+  // Composite in a headless page: a rounded browser window with a toolbar, the
+  // page on the left, and the panel docked on the right.
+  const WIN_W = 1180;
+  const WIN_H = 740;
+  const BAR_H = 44;
+  const PANEL_W = 400;
+  const PAD = 28;
+  const comp = await context.newPage();
+  await comp.setViewportSize({ width: WIN_W + PAD * 2, height: WIN_H + PAD * 2 });
+  const pageUrl = `data:image/png;base64,${pagePng.toString("base64")}`;
+  const panelUrl = `data:image/png;base64,${panelPng.toString("base64")}`;
+  const dot = (c) => `<span style="width:12px;height:12px;border-radius:50%;background:${c}"></span>`;
+  await comp.setContent(
+    `<!doctype html><html><body style="margin:0;padding:${PAD}px;background:transparent;
+        font-family:system-ui,sans-serif">
+       <div style="width:${WIN_W}px;height:${WIN_H}px;border-radius:12px;overflow:hidden;
+                   box-shadow:0 24px 70px rgba(30,41,59,.22),0 4px 12px rgba(30,41,59,.12);
+                   background:#fff">
+         <div style="height:${BAR_H}px;display:flex;align-items:center;gap:8px;padding:0 16px;
+                     background:#f1f5f9;border-bottom:1px solid #e2e8f0">
+           ${dot("#ef4444")}${dot("#f59e0b")}${dot("#22c55e")}
+           <div style="flex:1;margin:0 12px;height:26px;border-radius:13px;background:#fff;
+                       border:1px solid #e2e8f0;display:flex;align-items:center;padding:0 14px;
+                       color:#64748b;font-size:12px">example.com</div>
+         </div>
+         <div style="display:flex;height:${WIN_H - BAR_H}px">
+           <img src="${pageUrl}" style="flex:1 1 0;min-width:0;height:100%;object-fit:cover;object-position:top left" />
+           <div style="flex:0 0 ${PANEL_W}px;height:100%;border-left:1px solid #e2e8f0;overflow:hidden">
+             <img src="${panelUrl}" style="width:${PANEL_W}px;display:block" />
+           </div>
+         </div>
+       </div>
+     </body></html>`,
+    { waitUntil: "load" }
+  );
+  await comp.waitForTimeout(200);
+  const shot = await comp.screenshot({ type: "png", omitBackground: true });
+  await comp.close();
+  return shot;
+}
+
 async function main() {
   if (!existsSync(EXT_DIR)) {
     console.error(`Build not found at ${EXT_DIR} — run \`pnpm build\` first.`);
@@ -187,6 +236,18 @@ async function main() {
     const storeOut = resolve(STORE_DIR, `${shot.name}.png`);
     await writeFile(storeOut, framed);
     console.log(`✓ store  ${shot.name} → ${storeOut} (${STORE_W}x${STORE_H})`);
+  }
+
+  // Side panel (composited next to the page, so it's captured separately).
+  if (samplePng) {
+    const rawPanel = await captureSidePanel(context, extId, samplePng);
+    const panelReadme = resolve(README_DIR, "sidepanel.png");
+    await writeFile(panelReadme, rawPanel);
+    console.log(`✓ README sidepanel → ${panelReadme}`);
+    const panelFramed = await frameForStore(context, rawPanel);
+    const panelStore = resolve(STORE_DIR, "sidepanel.png");
+    await writeFile(panelStore, panelFramed);
+    console.log(`✓ store  sidepanel → ${panelStore} (${STORE_W}x${STORE_H})`);
   }
 
   // Annotation view (needs a seeded screenshot, so it's captured separately).
