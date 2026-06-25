@@ -4,10 +4,7 @@ import {
   appendEventWithRetentionPolicy,
   appendNetworkEventWithDedup,
 } from "@/capture-core/debugger/engine/background/retention";
-import {
-  normalizeDebuggerEvent,
-  normalizeStoredSession,
-} from "@/capture-core/debugger/normalize";
+import { normalizeDebuggerEvent, normalizeStoredSession } from "@/capture-core/debugger/normalize";
 import type {
   DebuggerEvent,
   DebuggerSessionSnapshot,

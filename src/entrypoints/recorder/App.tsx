@@ -1,3 +1,10 @@
+import type {
+  DebuggerActionEvent,
+  DebuggerConsoleEvent,
+  DebuggerNetworkEvent,
+  DebuggerSSEEvent,
+  DebuggerWebSocketEvent,
+} from "@/capture-core/debugger/types";
 import { AnnotationCanvas } from "@/components/annotation/AnnotationCanvas";
 import { DiagnosticsPanel } from "@/components/diagnostics-panel";
 import { IncludeOptions, type IncludeRow, NetworkPrivacyReview } from "@/components/export-review";
@@ -24,13 +31,6 @@ import {
   type SubmitFormValues,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import type {
-  DebuggerActionEvent,
-  DebuggerConsoleEvent,
-  DebuggerNetworkEvent,
-  DebuggerSSEEvent,
-  DebuggerWebSocketEvent,
-} from "@/capture-core/debugger/types";
 import {
   type DebuggerNetworkEvent as CoreNetworkEvent,
   type NetworkEdit,
