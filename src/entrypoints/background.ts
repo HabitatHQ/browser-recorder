@@ -17,6 +17,7 @@ import {
 import { clearErrorLog, getErrorLog, loadErrorLog, logExtensionError } from "@/lib/error-log";
 import { slugify, toFilenameTimestamp } from "@/lib/export";
 import { fail, ok } from "@/lib/messaging";
+import { appendBytesToOpfs, writeToOpfs } from "@/lib/opfs";
 import { injectReplayRecorderIntoTab, stopReplayInTab } from "@/lib/replay";
 import { isReplayEventsMessage } from "@/lib/replay-messaging";
 import {
@@ -179,18 +180,6 @@ function clearAutoCaptureTimers() {
   }
 }
 
-// ─── OPFS write helper ───────────────────────────────────────────────────────
-
-async function writeToOpfs(filename: string, bytes: Uint8Array): Promise<void> {
-  const dir = await navigator.storage.getDirectory();
-  const handle = await dir.getFileHandle(filename, { create: true });
-  const writable = await handle.createWritable();
-  // Buffer is always a plain ArrayBuffer here; cast avoids the ArrayBufferLike widening
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await writable.write(bytes.buffer as ArrayBuffer);
-  await writable.close();
-}
-
 // ─── Debugger event streaming to OPFS ────────────────────────────────────────
 // Every batch of raw events (console, network, interactions, websocket, sse)
 // is appended to a per-session NDJSON file in OPFS. This makes events
@@ -213,14 +202,7 @@ function appendDebuggerEventsToOpfs(events: unknown[]): void {
   const ndjson = `${events.map((e) => JSON.stringify(e)).join("\n")}\n`;
   const bytes = new TextEncoder().encode(ndjson);
   eventsWriteChain = eventsWriteChain
-    .then(async () => {
-      const dir = await navigator.storage.getDirectory();
-      const handle = await dir.getFileHandle(filename, { create: true });
-      const file = await handle.getFile();
-      const writable = await handle.createWritable({ keepExistingData: true });
-      await writable.write({ type: "write", position: file.size, data: bytes });
-      await writable.close();
-    })
+    .then(() => appendBytesToOpfs(filename, bytes))
     .catch((err) => {
       reportNonFatalError("Failed to append events to OPFS", err);
     });
@@ -236,11 +218,16 @@ let replayWriteChain: Promise<void> = Promise.resolve();
 
 function appendReplayEvents(events: unknown[], senderTabId: number | undefined): void {
   const session = bgSession;
-  if (!session || session.tabId !== senderTabId || !session.captureConfig.replay) {
+  if (
+    !session ||
+    session.tabId !== senderTabId ||
+    !session.captureConfig.replay ||
+    session.status === "paused"
+  ) {
     failStage(
       "replay",
       "stream",
-      `events from tab ${senderTabId} rejected (session tab ${bgSession?.tabId ?? "none"}, replay ${bgSession?.captureConfig.replay ?? "off"})`
+      `events from tab ${senderTabId} rejected (session tab ${bgSession?.tabId ?? "none"}, replay ${bgSession?.captureConfig.replay ?? "off"}, status ${bgSession?.status ?? "none"})`
     );
     return;
   }
@@ -268,12 +255,7 @@ function appendReplayEvents(events: unknown[], senderTabId: number | undefined):
   const bytes = new TextEncoder().encode(ndjson);
   replayWriteChain = replayWriteChain
     .then(async () => {
-      const dir = await navigator.storage.getDirectory();
-      const handle = await dir.getFileHandle(filename, { create: true });
-      const file = await handle.getFile();
-      const writable = await handle.createWritable({ keepExistingData: true });
-      await writable.write({ type: "write", position: file.size, data: bytes });
-      await writable.close();
+      await appendBytesToOpfs(filename, bytes);
       bumpStage("replay", "write", bytes.byteLength);
     })
     .catch((err) => {
@@ -381,7 +363,7 @@ export default defineBackground(() => {
       type RawEvent = { kind?: string; actionType?: string; metadata?: { mode?: string } };
       const events = rawEvents as RawEvent[];
 
-      if (bgSession?.tabId === tabId) {
+      if (bgSession?.tabId === tabId && bgSession.status !== "paused") {
         let consoleN = 0;
         let networkN = 0;
         let interactionsN = 0;
@@ -647,9 +629,14 @@ async function handleMessage(message: BgMessage) {
 
     case "stop-session": {
       if (!bgSession) return fail("No active session");
+      // Resume first so MediaRecorder is in a stoppable state and rrweb stops cleanly.
+      const wasStopPaused = bgSession.status === "paused";
       bgSession.status = "stopping";
       await persistSession();
       clearAutoCaptureTimers();
+      if (wasStopPaused && bgSession.captureConfig.video) {
+        await chrome.runtime.sendMessage({ type: "offscreen-resume-recording" }).catch(() => {});
+      }
       // Stop the page recorder, let the bridge flush its last batch, then wait
       // for all queued OPFS appends to commit before the recorder reads the file.
       if (bgSession.captureConfig.replay) {
@@ -683,6 +670,38 @@ async function handleMessage(message: BgMessage) {
         url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
       });
       recorderTabId = recorderTab.id ?? null;
+      return ok(undefined);
+    }
+
+    case "pause-session": {
+      if (!bgSession || bgSession.status !== "recording") return fail("No active recording");
+      bgSession.status = "paused";
+      await persistSession();
+      clearAutoCaptureTimers();
+      if (bgSession.captureConfig.replay) {
+        await stopReplayInTab(bgSession.tabId);
+        await replayWriteChain;
+      }
+      if (bgSession.captureConfig.video) {
+        await chrome.runtime.sendMessage({ type: "offscreen-pause-recording" }).catch(() => {});
+      }
+      chrome.action.setBadgeText({ text: "PAUS" });
+      chrome.action.setBadgeBackgroundColor({ color: "#f97316" });
+      return ok(undefined);
+    }
+
+    case "resume-session": {
+      if (!bgSession || bgSession.status !== "paused") return fail("Session is not paused");
+      bgSession.status = "recording";
+      await persistSession();
+      if (bgSession.captureConfig.replay) {
+        await injectReplayRecorderIntoTab(bgSession.tabId);
+      }
+      if (bgSession.captureConfig.video) {
+        await chrome.runtime.sendMessage({ type: "offscreen-resume-recording" }).catch(() => {});
+      }
+      chrome.action.setBadgeText({ text: "REC" });
+      chrome.action.setBadgeBackgroundColor({ color: "#ef4444" });
       return ok(undefined);
     }
 
@@ -914,7 +933,7 @@ function serializeDom(): string {
 }
 
 async function captureAutoScreenshot(tabId: number): Promise<void> {
-  if (!bgSession || bgSession.tabId !== tabId) return;
+  if (!bgSession || bgSession.tabId !== tabId || bgSession.status === "paused") return;
   try {
     const tab = await chrome.tabs.get(tabId);
     if (!tab.windowId) return;
@@ -935,7 +954,7 @@ async function captureAutoScreenshot(tabId: number): Promise<void> {
 }
 
 async function captureAutoDomSnapshot(tabId: number): Promise<void> {
-  if (!bgSession || bgSession.tabId !== tabId) return;
+  if (!bgSession || bgSession.tabId !== tabId || bgSession.status === "paused") return;
   const index = bgSession.domSnapshotCount + 1;
   await captureAndStoreDomSnapshot(tabId, `auto-${index}`);
   bgSession.domSnapshotCount = index;

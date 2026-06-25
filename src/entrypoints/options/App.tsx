@@ -795,7 +795,7 @@ export default function App() {
                   <InfoTooltip text="Records the page DOM with rrweb so the session can be replayed as a scrubbable reconstruction (not a video). Events stream to disk as they happen, so reloads and navigations are captured continuously. Adds replay.html + replay.json to the export. Experimental: cross-origin styles/canvas may render imperfectly." />
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Capture a DOM replay alongside the report · prototype
+                  Capture a DOM replay alongside the report · experimental
                 </p>
               </div>
               <Switch
