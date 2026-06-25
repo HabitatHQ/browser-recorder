@@ -320,7 +320,7 @@ function handleFxVideoMessage(msg: FxVideoMsg): void {
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
 
-export default defineBackground(async () => {
+async function initializeBackgroundState(): Promise<void> {
   await initState();
 
   // ── Crash recovery ──────────────────────────────────────────────────────────
@@ -362,7 +362,20 @@ export default defineBackground(async () => {
   }
 
   await sweepOrphanedOpfsFiles();
+}
 
+// Resolves once initializeBackgroundState() has restored persisted state. Every
+// listener below awaits this before touching that state, which lets the listeners
+// be registered synchronously — a cold-started MV3 service worker must have its
+// onMessage listener in place the instant it wakes, otherwise the very message
+// that woke it fails in the sender with "Could not establish connection.
+// Receiving end does not exist." (e.g. Save settings after the worker idled out).
+let resolveBackgroundReady!: () => void;
+const backgroundReady = new Promise<void>((resolve) => {
+  resolveBackgroundReady = resolve;
+});
+
+export default defineBackground(() => {
   debuggerBridge = registerDebuggerBackgroundListeners(
     async (tabId, rawEvents) => {
       type RawEvent = { kind?: string; actionType?: string; metadata?: { mode?: string } };
@@ -437,18 +450,19 @@ export default defineBackground(async () => {
   chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
     if (isDebuggerRuntimeMessage(message)) return;
     if (isReplayEventsMessage(message)) {
-      appendReplayEvents(message.events, sender.tab?.id);
+      void backgroundReady.then(() => appendReplayEvents(message.events, sender.tab?.id));
       return false;
     }
     if (isOffscreenMessage(message)) {
-      void handleOffscreenMessage(message);
+      void backgroundReady.then(() => handleOffscreenMessage(message));
       return false;
     }
     if (isFxVideoMessage(message)) {
-      handleFxVideoMessage(message);
+      void backgroundReady.then(() => handleFxVideoMessage(message));
       return false;
     }
-    handleMessage(message as BgMessage)
+    backgroundReady
+      .then(() => handleMessage(message as BgMessage))
       .then(sendResponse)
       .catch((err: unknown) => {
         reportNonFatalError("Background message handler failed", err);
@@ -458,12 +472,13 @@ export default defineBackground(async () => {
   });
 
   chrome.commands.onCommand.addListener((command) => {
-    handleCommand(command).catch((err: unknown) =>
-      reportNonFatalError(`Command ${command} failed`, err)
-    );
+    backgroundReady
+      .then(() => handleCommand(command))
+      .catch((err: unknown) => reportNonFatalError(`Command ${command} failed`, err));
   });
 
   chrome.tabs.onRemoved.addListener(async (tabId) => {
+    await backgroundReady;
     if (tabId === firefoxVideoTabId) {
       // User closed the video capture tab — treat as a clean stop.
       firefoxVideoTabId = null;
@@ -504,12 +519,15 @@ export default defineBackground(async () => {
   // stream stays continuous across the reload.
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
     if (changeInfo.status !== "complete") return;
-    if (bgSession?.tabId !== tabId || bgSession.status !== "recording") return;
-    if (!bgSession.captureConfig.replay) return;
-    void injectReplayRecorderIntoTab(tabId);
+    void backgroundReady.then(() => {
+      if (bgSession?.tabId !== tabId || bgSession.status !== "recording") return;
+      if (!bgSession.captureConfig.replay) return;
+      void injectReplayRecorderIntoTab(tabId);
+    });
   });
 
   chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+    await backgroundReady;
     if (!ringActive || ringTabId === tabId) return;
     try {
       const tab = await chrome.tabs.get(tabId);
@@ -519,6 +537,13 @@ export default defineBackground(async () => {
       // tab may not exist yet
     }
   });
+
+  // Listeners are registered; now restore persisted state and open the gate so
+  // queued events run. Runs after the synchronous registration above so a
+  // freshly-woken worker can already receive the message that woke it.
+  void initializeBackgroundState()
+    .catch((err: unknown) => reportNonFatalError("Background initialization failed", err))
+    .finally(() => resolveBackgroundReady());
 });
 
 // ─── Message handler ─────────────────────────────────────────────────────────

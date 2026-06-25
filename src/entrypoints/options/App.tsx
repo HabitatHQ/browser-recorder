@@ -197,7 +197,13 @@ export default function App() {
       setIsDirty(false);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const raw = e instanceof Error ? e.message : String(e);
+      // The raw Chrome string ("Could not establish connection. Receiving end
+      // does not exist.") is meaningless to users; map it to actionable text.
+      const friendly = /could not establish connection|receiving end does not exist/i.test(raw)
+        ? "Couldn't reach the extension in the background. Please try saving again."
+        : raw;
+      setError(friendly);
     }
   };
 
