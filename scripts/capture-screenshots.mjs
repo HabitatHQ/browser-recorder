@@ -43,6 +43,14 @@ const SHOTS = [
     waitFor: "text=Start session",
   },
   {
+    // The side panel reuses the popup UI (full-width) — rendered standalone the
+    // same way, at a taller side-panel-like viewport.
+    name: "sidepanel",
+    page: "sidepanel.html",
+    viewport: { width: 400, height: 760 },
+    waitFor: "text=Start session",
+  },
+  {
     name: "options",
     page: "options.html",
     viewport: { width: 760, height: 1100 },
