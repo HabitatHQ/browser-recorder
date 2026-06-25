@@ -14,6 +14,7 @@ import {
   recordDiagnosticError,
   resetDiagnostics,
 } from "@/lib/diagnostics";
+import { clearErrorLog, getErrorLog, loadErrorLog, logExtensionError } from "@/lib/error-log";
 import { slugify, toFilenameTimestamp } from "@/lib/export";
 import { fail, ok } from "@/lib/messaging";
 import { injectReplayRecorderIntoTab, stopReplayInTab } from "@/lib/replay";
@@ -133,8 +134,14 @@ async function initState(): Promise<void> {
   bgCounts = await getCounts();
   ringConfig = await getRingConfig();
   await loadDiagnostics();
-  // Route every reportNonFatalError in this context into the diagnostics store.
-  setErrorSink(recordDiagnosticError);
+  await loadErrorLog();
+  // Route every reportNonFatalError in this context into the per-session
+  // diagnostics store AND the persistent extension-wide error log (the latter
+  // backs the "Report a bug" flow and survives session resets / SW restarts).
+  setErrorSink((context, error) => {
+    recordDiagnosticError(context, error);
+    logExtensionError(context, error);
+  });
 }
 
 function persistSession(): Promise<void> {
@@ -297,9 +304,7 @@ type FxVideoMsg = { type: "fx-video-done"; filename: string };
 
 function isFxVideoMessage(msg: unknown): msg is FxVideoMsg {
   return (
-    typeof msg === "object" &&
-    msg !== null &&
-    (msg as { type?: unknown }).type === "fx-video-done"
+    typeof msg === "object" && msg !== null && (msg as { type?: unknown }).type === "fx-video-done"
   );
 }
 
@@ -528,6 +533,13 @@ async function handleMessage(message: BgMessage) {
 
     case "get-diagnostics":
       return ok(getDiagnostics());
+
+    case "get-error-log":
+      return ok(getErrorLog());
+
+    case "clear-error-log":
+      await clearErrorLog();
+      return ok(undefined);
 
     case "get-settings":
       return ok(await getSettings());
