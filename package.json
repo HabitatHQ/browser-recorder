@@ -3,6 +3,14 @@
   "version": "0.4.0",
   "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/npalladium/chrome-recorder.git"
+  },
+  "homepage": "https://github.com/npalladium/chrome-recorder",
+  "bugs": {
+    "url": "https://github.com/npalladium/chrome-recorder/issues"
+  },
   "scripts": {
     "dev": "wxt --port 5555",
     "dev:firefox": "wxt -b firefox",

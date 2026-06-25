@@ -8,6 +8,7 @@ const sessionId = params.get("sessionId") ?? "";
 const tabTitle = params.get("tabTitle") ?? "the tab you're recording";
 const filename = params.get("filename") ?? `chrome-recorder-fx-${sessionId}.webm`;
 
+// biome-ignore lint/style/noNonNullAssertion: root element is always present in the bundled HTML
 const root = document.getElementById("root")!;
 
 function render(content: string) {
@@ -21,7 +22,7 @@ function showIdle() {
        screen picker to start recording.</p>
     <button id="startBtn">Start video capture</button>
   `);
-  document.getElementById("startBtn")!.addEventListener("click", startCapture);
+  document.getElementById("startBtn")?.addEventListener("click", startCapture);
 }
 
 function showRecording() {
@@ -39,7 +40,7 @@ function showError(msg: string) {
     <p class="error">Could not start recording: ${escapeHtml(msg)}</p>
     <button id="retryBtn">Try again</button>
   `);
-  document.getElementById("retryBtn")!.addEventListener("click", showIdle);
+  document.getElementById("retryBtn")?.addEventListener("click", showIdle);
 }
 
 function escapeHtml(s: string): string {

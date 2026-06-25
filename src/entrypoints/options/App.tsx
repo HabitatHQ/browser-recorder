@@ -5,6 +5,15 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  type ReportData,
+  buildEnvironmentBlock,
+  buildFullDiagnostics,
+  buildIssueUrl,
+  summarizeSettings,
+} from "@/lib/bug-report";
+import type { Diagnostics } from "@/lib/diagnostics";
+import type { ExtensionError } from "@/lib/error-log";
 import { sendToBackground } from "@/lib/messaging";
 import {
   type CaptureConfig,
@@ -17,6 +26,7 @@ import {
   type VideoConfig,
   type VideoFormat,
 } from "@/lib/types";
+import { Bug, Copy } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 // Maps each explicit format to its probe MIME type
@@ -59,6 +69,10 @@ export default function App() {
   const [isDirty, setIsDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorLog, setErrorLog] = useState<ExtensionError[]>([]);
+  const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
   // Formats supported by MediaRecorder in this browser context
   const supportedFormats = useMemo<VideoFormat[]>(() => {
@@ -86,7 +100,56 @@ export default function App() {
     sendToBackground<RingConfig>({ type: "get-ring-config" })
       .then((rc) => setRingConfig(rc))
       .catch(() => {});
+    sendToBackground<ExtensionError[]>({ type: "get-error-log" })
+      .then((log) => setErrorLog(log))
+      .catch(() => {});
+    sendToBackground<Diagnostics>({ type: "get-diagnostics" })
+      .then((d) => setDiagnostics(d))
+      .catch(() => {});
   }, []);
+
+  const buildReportData = (): ReportData => ({
+    env: {
+      version: chrome.runtime.getManifest().version,
+      browser: import.meta.env.BROWSER,
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+    },
+    settings: summarizeSettings(captureConfig, networkFilter),
+    diagnostics,
+    errorLog,
+  });
+
+  const openBugReport = () => {
+    setReportError(null);
+    const homepage = chrome.runtime.getManifest().homepage_url;
+    if (!homepage) {
+      setReportError("Repository URL is unavailable — file an issue manually.");
+      return;
+    }
+    const url = buildIssueUrl(homepage, buildEnvironmentBlock(buildReportData()));
+    chrome.tabs.create({ url });
+  };
+
+  const copyDiagnostics = async () => {
+    setReportError(null);
+    try {
+      await navigator.clipboard.writeText(buildFullDiagnostics(buildReportData()));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      setReportError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const clearErrors = async () => {
+    try {
+      await sendToBackground({ type: "clear-error-log" });
+      setErrorLog([]);
+    } catch (e) {
+      setReportError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   useEffect(() => {
     if (!isDirty) return;
@@ -754,6 +817,65 @@ export default function App() {
                 onChange={() => toggleCapture("performance")}
               />
             </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-side-panel" className="font-medium">
+                    Side panel UI (experimental)
+                  </Label>
+                  <InfoTooltip text="Adds an 'Open in side panel' button to the popup. The side panel docks the recorder into the browser chrome so it stays open while you interact with the page — take screenshots, snapshot the DOM, and stop the session without the popup closing each time. Chrome 114+ (side panel) and Firefox (sidebar); falls back to the popup elsewhere." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Dock the recorder into the browser side panel · prototype
+                </p>
+              </div>
+              <Switch
+                id="opt-side-panel"
+                checked={captureConfig.sidePanel}
+                onChange={() => toggleCapture("sidePanel")}
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-8">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Report a bug
+          </h2>
+          <Separator className="mb-4" />
+
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">
+              Opens a prefilled GitHub issue with your extension version, browser, OS, a
+              capture-settings summary, and recent internal errors. Page content and raw settings
+              (URLs, custom header names) are never included — only counts.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {errorLog.length > 0
+                ? `${errorLog.length} internal error(s) recorded recently.`
+                : "No internal errors recorded recently."}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={openBugReport}>
+                <Bug className="h-4 w-4" />
+                Report a bug
+              </Button>
+              <Button variant="outline" onClick={copyDiagnostics}>
+                <Copy className="h-4 w-4" />
+                {copied ? "Copied ✓" : "Copy full diagnostics"}
+              </Button>
+              {errorLog.length > 0 && (
+                <Button
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={clearErrors}
+                >
+                  Clear error log
+                </Button>
+              )}
+            </div>
+            {reportError && <p className="text-xs text-destructive">{reportError}</p>}
           </div>
         </section>
       </div>

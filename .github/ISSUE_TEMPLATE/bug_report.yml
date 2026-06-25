@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a bug in the Browser Recorder extension
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug! The extension's **Settings → Report a bug** button
+        prefills the Environment field below and can copy full diagnostics to your
+        clipboard — paste them into the Diagnostics section if asked.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the popup
+        2. Start a session on …
+        3. …
+    validations:
+      required: false
+  - type: input
+    id: site
+    attributes:
+      label: Site being recorded (if relevant)
+      description: The URL of the page you were capturing when the bug occurred.
+    validations:
+      required: false
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Auto-filled by the extension's "Report a bug" button. Edit if needed.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Optional. Paste the output of "Copy full diagnostics" from the extension here.
+      render: json
+    validations:
+      required: false
