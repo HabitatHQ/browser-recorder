@@ -22,7 +22,6 @@ export function ReplayPlayer({ events }: { events: unknown[] }) {
   const [boxHeight, setBoxHeight] = useState(440);
   const [error, setError] = useState<string | null>(null);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: rebuild only when the events change; total is derived inside.
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame || events.length < 2) return;

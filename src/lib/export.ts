@@ -13,10 +13,12 @@ import { Zip, ZipPassThrough } from "fflate";
 import { buildReplayHtml } from "./replay-html";
 import { buildReportHtml } from "./report-html";
 
-const README = `\
+function buildReadme(repoUrl: string | undefined): string {
+  const tool = repoUrl ? `[Browser Recorder](${repoUrl})` : "Browser Recorder";
+  return `\
 # Bug report — Browser Recorder
 
-Captured with [Browser Recorder](https://github.com/npalladium/chrome-recorder).
+Captured with ${tool}.
 
 ## Files
 
@@ -44,6 +46,7 @@ Captured with [Browser Recorder](https://github.com/npalladium/chrome-recorder).
 - Sensitive headers (\`Authorization\`, \`Cookie\`) are redacted to \`[REDACTED]\` by default.
 - A network entry marked \`"dropped": true\` was deliberately removed by the submitter during review — only that the request happened (method, URL, status) is kept; headers and bodies are gone. report.md notes how many requests were dropped and how many fields were redacted.
 `;
+}
 
 export interface ExportInclude {
   console: boolean;
@@ -320,7 +323,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
 
     const work: Array<() => Promise<void>> = [];
 
-    addText(zip, `${prefix}README.md`, README);
+    addText(zip, `${prefix}README.md`, buildReadme(chrome.runtime.getManifest().homepage_url));
     addText(zip, `${prefix}report.md`, buildReportMd(reportInput, now));
     addText(
       zip,
