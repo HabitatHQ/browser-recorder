@@ -1,5 +1,12 @@
+import { readFileSync } from "node:fs"
 import tailwindcss from "@tailwindcss/vite"
 import { type Plugin, defineConfig } from "wxt"
+
+// Single source of truth for the repo URL: package.json → manifest.homepage_url →
+// chrome.runtime.getManifest() at runtime. Keeps the repo slug out of the code.
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
+  homepage?: string
+}
 
 // chrome.scripting.executeScript validates injected files with base::IsStringUTF8,
 // which rejects Unicode *non-characters* (U+FDD0–U+FDEF, U+FFFE/U+FFFF) even though
@@ -38,6 +45,7 @@ export default defineConfig({
       name: "Browser Recorder",
       short_name: "Recorder",
       description: "Capture console, network, interactions and DOM snapshots for bug reports",
+      ...(pkg.homepage && { homepage_url: pkg.homepage }),
       action: {
         default_title: "Browser Recorder",
         default_popup: "popup.html",

@@ -4,6 +4,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { formatDuration, useElapsedMs, useSession } from "@/hooks/use-session";
 import { sendToBackground } from "@/lib/messaging";
+import { canOpenSidePanel, openSidePanel, useDismiss, useSurface } from "@/lib/surface";
 import { type CaptureConfig, DEFAULT_CAPTURE_CONFIG, type RingStatus } from "@/lib/types";
 import {
   AlertTriangle,
@@ -14,6 +15,7 @@ import {
   Loader2,
   MousePointer,
   Network,
+  PanelRight,
   RefreshCw,
   Settings,
   Square,
@@ -38,6 +40,7 @@ function RingSection() {
   const [toggling, setToggling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const statusRef = useRef<RingStatus | null>(null);
+  const dismiss = useDismiss();
 
   const fetchStatus = () => {
     sendToBackground<RingStatus>({ type: "get-ring-status" })
@@ -74,7 +77,7 @@ function RingSection() {
   const exportRing = async () => {
     try {
       await sendToBackground({ type: "export-ring" });
-      window.close();
+      dismiss();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -136,6 +139,7 @@ function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
   const [config, setConfig] = useState<CaptureConfig>(initialConfig);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dismiss = useDismiss();
 
   const toggle = (key: keyof CaptureConfig) => setConfig((c) => ({ ...c, [key]: !c[key] }));
 
@@ -144,7 +148,7 @@ function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
     setError(null);
     try {
       await sendToBackground({ type: "start-session", captureConfig: config });
-      window.close();
+      dismiss();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setStarting(false);
@@ -154,7 +158,7 @@ function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
   const takeScreenshot = async () => {
     try {
       await sendToBackground({ type: "take-screenshot" });
-      window.close();
+      dismiss();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -163,7 +167,7 @@ function IdleView({ initialConfig }: { initialConfig: CaptureConfig }) {
   const snapshotDom = async () => {
     try {
       await sendToBackground({ type: "snapshot-dom" });
-      window.close();
+      dismiss();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -271,6 +275,7 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
   const [discardPending, setDiscardPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ringActive, setRingActive] = useState(false);
+  const dismiss = useDismiss();
 
   useEffect(() => {
     sendToBackground<RingStatus>({ type: "get-ring-status" })
@@ -290,7 +295,7 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
   const stopSession = () =>
     wrap(async () => {
       await sendToBackground({ type: "stop-session" });
-      window.close();
+      dismiss();
     });
 
   const takeScreenshot = () =>
@@ -310,7 +315,7 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
   const confirmDiscard = () =>
     wrap(async () => {
       await sendToBackground({ type: "discard-session" });
-      window.close();
+      dismiss();
     });
 
   if (loading || !session) return null;
@@ -439,9 +444,23 @@ function ActiveView({ currentTabId }: { currentTabId: number | null }) {
 
 export default function App() {
   const { session, loading } = useSession();
+  const surface = useSurface();
   const [initialConfig, setInitialConfig] = useState<CaptureConfig>(DEFAULT_CAPTURE_CONFIG);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [currentTabId, setCurrentTabId] = useState<number | null>(null);
+
+  // Offer promotion to the side panel only from the popup, only when the flag is
+  // on, and only where the browser supports it (Chromium 114+ / Firefox).
+  const showOpenInPanel =
+    surface === "popup" && settingsLoaded && initialConfig.sidePanel && canOpenSidePanel();
+  const promoteToSidePanel = async () => {
+    try {
+      await openSidePanel();
+      window.close();
+    } catch {
+      // Opening can fail outside a user gesture; leave the popup open as a fallback.
+    }
+  };
 
   useEffect(() => {
     sendToBackground<{ captureConfig: CaptureConfig }>({ type: "get-settings" })
@@ -458,20 +477,35 @@ export default function App() {
   }, []);
 
   return (
-    <div className="w-[380px] bg-background text-foreground">
+    <div
+      className={`${surface === "sidepanel" ? "w-full" : "w-[380px]"} bg-background text-foreground`}
+    >
       <div className="flex items-center justify-between px-4 pt-4 pb-2">
         <div className="flex items-center gap-2">
           <Logo className="h-5 w-5" />
           <span className="text-sm font-semibold tracking-tight">Browser Recorder</span>
         </div>
-        <button
-          type="button"
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          onClick={() => chrome.runtime.openOptionsPage()}
-          aria-label="Settings"
-        >
-          <Settings className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {showOpenInPanel && (
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              onClick={promoteToSidePanel}
+              aria-label="Open in side panel"
+              title="Open in side panel"
+            >
+              <PanelRight className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => chrome.runtime.openOptionsPage()}
+            aria-label="Settings"
+          >
+            <Settings className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {!loading &&

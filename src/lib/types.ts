@@ -16,6 +16,12 @@ export interface CaptureConfig {
   // timing, memory, fps) via PerformanceObserver. See
   // src/vendor/capture-core/debugger/engine/page/performance.ts.
   performance: boolean;
+  // Experimental: surface the recorder UI in the browser side panel (Chrome
+  // sidePanel / Firefox sidebar) instead of only the popup. This is a UI-surface
+  // flag, not a capture concern — it rides in CaptureConfig purely to reuse the
+  // existing settings plumbing. Gates the "Open in side panel" affordance in the
+  // popup. See src/lib/surface.tsx and src/entrypoints/sidepanel/.
+  sidePanel: boolean;
 }
 
 export interface NetworkFilterConfig {
@@ -52,6 +58,7 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   zipTitleFilename: false,
   replay: false,
   performance: false,
+  sidePanel: false,
 };
 
 export const DEFAULT_NETWORK_FILTER: NetworkFilterConfig = {
@@ -171,6 +178,8 @@ export type BgMessage =
   | { type: "toggle-ring"; enabled: boolean }
   | { type: "export-ring" }
   | { type: "save-ring-config"; ringConfig: RingConfig }
-  | { type: "get-ring-config" };
+  | { type: "get-ring-config" }
+  | { type: "get-error-log" }
+  | { type: "clear-error-log" };
 
 export type BgResponse<T = undefined> = { ok: true; data: T } | { ok: false; error: string };
