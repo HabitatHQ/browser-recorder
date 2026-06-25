@@ -12,7 +12,7 @@ This is a pnpm workspace with two packages:
 | `cli/` | `@browser-recorder/cli` | Node CLI that captures via Playwright/CDP |
 | `packages/core` | `@browser-recorder/core` | Shared types + report builders used by both |
 
-The capture engine in `src/vendor/capture-core/` is adapted from [crikket](https://github.com/redpangilinan/crikket) by [redpangilinan](https://github.com/redpangilinan) (AGPL-3.0, which is why this whole project is AGPL-3.0).
+The capture engine in `src/capture-core/` is adapted from [crikket](https://github.com/redpangilinan/crikket) by [redpangilinan](https://github.com/redpangilinan) (AGPL-3.0, which is why this whole project is AGPL-3.0). It has since been substantially extended, so it lives in the main source tree rather than a `vendor/` directory — the attribution stands because the original code remains its basis.
 
 ## Prerequisites
 

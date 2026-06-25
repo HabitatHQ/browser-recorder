@@ -14,7 +14,7 @@ export interface CaptureConfig {
   replay: boolean;
   // Beta: capture performance metrics (Web Vitals, long tasks, resource/navigation
   // timing, memory, fps) via PerformanceObserver. See
-  // src/vendor/capture-core/debugger/engine/page/performance.ts.
+  // src/capture-core/debugger/engine/page/performance.ts.
   performance: boolean;
   // Experimental: surface the recorder UI in the browser side panel (Chrome
   // sidePanel / Firefox sidebar) instead of only the popup. This is a UI-surface

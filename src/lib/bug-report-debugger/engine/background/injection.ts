@@ -1,4 +1,4 @@
-import { reportNonFatalError } from "@/vendor/shared/lib/errors";
+import { reportNonFatalError } from "@/shared/lib/errors";
 
 // WXT bundles defineUnlistedScript entrypoints to these filenames
 const CONTENT_BRIDGE_FILE = "debugger-content-bridge.js";

@@ -7,14 +7,14 @@ import {
   PAGE_EVENTS_MESSAGE,
   PAGE_EVENT_MESSAGE,
   START_SESSION_MESSAGE,
-} from "@/vendor/capture-core/debugger/constants";
-import { isRecordLike } from "@/vendor/capture-core/debugger/normalize";
+} from "@/capture-core/debugger/constants";
+import { isRecordLike } from "@/capture-core/debugger/normalize";
 import type {
   DebuggerContentBridgePayload,
   DebuggerRuntimeMessage,
   DebuggerRuntimeResponse,
-} from "@/vendor/capture-core/debugger/types";
-import { reportNonFatalError } from "@/vendor/shared/lib/errors";
+} from "@/capture-core/debugger/types";
+import { reportNonFatalError } from "@/shared/lib/errors";
 
 export function sendDebuggerMessage<TData>(message: DebuggerRuntimeMessage): Promise<TData> {
   return new Promise((resolve, reject) => {

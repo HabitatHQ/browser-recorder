@@ -51,7 +51,7 @@ import {
   type Session,
   type SessionCounts,
 } from "@/lib/types";
-import { reportNonFatalError, setErrorSink } from "@/vendor/shared/lib/errors";
+import { reportNonFatalError, setErrorSink } from "@/shared/lib/errors";
 
 // ─── Timing constants ────────────────────────────────────────────────────────
 

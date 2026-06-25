@@ -1,6 +1,6 @@
 import { failStage, markStageOk } from "@/lib/diagnostics";
 import { REPLAY_STOP_MESSAGE } from "@/lib/replay-messaging";
-import { reportNonFatalError } from "@/vendor/shared/lib/errors";
+import { reportNonFatalError } from "@/shared/lib/errors";
 
 // WXT bundles the defineUnlistedScript entrypoints to these filenames.
 const REPLAY_RECORD_FILE = "replay-record.js";

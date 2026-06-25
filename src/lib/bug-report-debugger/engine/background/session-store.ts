@@ -1,19 +1,19 @@
-import { DEBUGGER_SESSIONS_STORAGE_KEY } from "@/vendor/capture-core/debugger/constants";
+import { DEBUGGER_SESSIONS_STORAGE_KEY } from "@/capture-core/debugger/constants";
 import {
   appendActionEventWithDedup,
   appendEventWithRetentionPolicy,
   appendNetworkEventWithDedup,
-} from "@/vendor/capture-core/debugger/engine/background/retention";
+} from "@/capture-core/debugger/engine/background/retention";
 import {
   normalizeDebuggerEvent,
   normalizeStoredSession,
-} from "@/vendor/capture-core/debugger/normalize";
+} from "@/capture-core/debugger/normalize";
 import type {
   DebuggerEvent,
   DebuggerSessionSnapshot,
   StoredDebuggerSession,
-} from "@/vendor/capture-core/debugger/types";
-import { reportNonFatalError } from "@/vendor/shared/lib/errors";
+} from "@/capture-core/debugger/types";
+import { reportNonFatalError } from "@/shared/lib/errors";
 import { createSessionId, injectDebuggerScriptIntoTab, isInjectablePageUrl } from "./injection";
 
 interface StartSessionPayload {

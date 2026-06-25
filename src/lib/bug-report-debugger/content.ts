@@ -1,4 +1,4 @@
-import { reportNonFatalError } from "@/vendor/shared/lib/errors";
+import { reportNonFatalError } from "@/shared/lib/errors";
 import { isDebuggerContentBridgePayload, sendDebuggerPageEvents } from "./messaging";
 
 const INSTALL_FLAG = "__chromeRecorderDebuggerBridgeInstalled";

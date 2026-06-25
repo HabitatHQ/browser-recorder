@@ -30,7 +30,7 @@ import type {
   DebuggerNetworkEvent,
   DebuggerSSEEvent,
   DebuggerWebSocketEvent,
-} from "@/vendor/capture-core/debugger/types";
+} from "@/capture-core/debugger/types";
 import {
   type DebuggerNetworkEvent as CoreNetworkEvent,
   type NetworkEdit,

@@ -26,7 +26,7 @@ Mozilla reviews source whenever submitted code is minified or bundled, which WXT
 - **Repo:** this project, AGPL-3.0.
 - **Build steps:** `pnpm install` then `pnpm zip:firefox`; the output zip in `.output/` matches the submitted package.
 - **Toolchain:** Node and pnpm versions (match the repo's `package.json` / lockfile).
-- **Vendored code:** the capture engine in `src/vendor/capture-core/` is adapted from [crikket](https://github.com/redpangilinan/crikket) (also AGPL-3.0).
+- **Adapted code:** the capture engine in `src/capture-core/` is adapted from [crikket](https://github.com/redpangilinan/crikket) (also AGPL-3.0), since extended in-tree.
 
 ## What's in the upload vs. the dashboard
 

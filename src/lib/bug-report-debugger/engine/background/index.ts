@@ -7,9 +7,9 @@ import {
   PAGE_EVENTS_MESSAGE,
   PAGE_EVENT_MESSAGE,
   START_SESSION_MESSAGE,
-} from "@/vendor/capture-core/debugger/constants";
-import type { DebuggerRuntimeResponse } from "@/vendor/capture-core/debugger/types";
-import { reportNonFatalError } from "@/vendor/shared/lib/errors";
+} from "@/capture-core/debugger/constants";
+import type { DebuggerRuntimeResponse } from "@/capture-core/debugger/types";
+import { reportNonFatalError } from "@/shared/lib/errors";
 import { isDebuggerRuntimeMessage } from "../../messaging";
 import { createDebuggerSessionStore } from "./session-store";
 
