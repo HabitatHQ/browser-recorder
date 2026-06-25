@@ -1,7 +1,7 @@
 import type { PageRuntimeDiagnostics, Reporter } from "./types";
 import { truncate } from "./utils";
 
-const DIAGNOSTICS_KEY = "__crikketDebuggerDiagnostics";
+const DIAGNOSTICS_KEY = "__browserRecorderDebuggerDiagnostics";
 const DIAGNOSTICS_VERSION = 1;
 const MAX_ERROR_ENTRIES = 25;
 const MAX_ERROR_LENGTH = 300;

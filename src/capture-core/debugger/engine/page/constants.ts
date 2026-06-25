@@ -1,5 +1,5 @@
-export const PAGE_SOURCE = "CRIKKET_DEBUGGER_PAGE_BRIDGE";
-export const INSTALL_FLAG = "__crikketDebuggerPageScriptInstalled";
+export const PAGE_SOURCE = "BROWSER_RECORDER_DEBUGGER_PAGE_BRIDGE";
+export const INSTALL_FLAG = "__browserRecorderDebuggerPageScriptInstalled";
 
 export const MAX_TEXT_LENGTH = 2000;
 export const MAX_BODY_LENGTH = 4000;
