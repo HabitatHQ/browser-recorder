@@ -86,6 +86,7 @@ export function buildReportHtml(input: ReportHtmlInput): string {
   .b-websocket { background: #1f3a34; color: #7fd1bd; }
   .b-sse { background: #3a2f1f; color: #d8b67f; }
   .b-performance { background: #1f3326; color: #8fd99f; }
+  .src { display: inline-block; font-size: 10px; color: #8fb6f0; background: #1b2536; border-radius: 4px; padding: 0 5px; margin-right: 6px; vertical-align: 1px; }
   .scores { display: flex; flex-wrap: wrap; gap: 10px; }
   .score { background: #1b1e26; border: 1px solid #2a2e3a; border-radius: 8px; padding: 8px 12px; min-width: 88px; }
   .score .k { font-size: 11px; color: #9aa0aa; text-transform: uppercase; letter-spacing: .04em; }
@@ -246,10 +247,15 @@ export function buildReportHtml(input: ReportHtmlInput): string {
       || (entry.kind === "network" && entry.event.status != null && entry.event.status >= 400) ? "1" : "0";
     var from = entry.initiatedBySeq ? ' <a class="from" href="#e' + entry.initiatedBySeq + '">↳ from #' + entry.initiatedBySeq + '</a>' : "";
     var detail = s.detail ? '<details><summary>details</summary><pre>' + esc(s.detail) + '</pre></details>' : "";
+    // __ringSource is attached by the ring exporter when more than one tab
+    // contributed, so an interleaved multi-tab timeline shows which tab each
+    // entry came from.
+    var rs = entry.event && entry.event.__ringSource;
+    var src = rs ? '<span class="src" title="source tab">' + esc(rs.host || rs.title || ("tab " + rs.tabId)) + '</span>' : "";
     row.innerHTML =
       '<div class="off">' + fmtOff(entry.offsetMs) + '</div>' +
       '<div class="badge b-' + entry.kind + '">' + (entry.kind === "action" ? "interact" : entry.kind === "performance" ? "perf" : entry.kind) + '</div>' +
-      '<div class="summary"><div class="main">' + s.html + from + '</div>' +
+      '<div class="summary"><div class="main">' + src + s.html + from + '</div>' +
       (s.sub ? '<div class="sub mono">' + s.sub + '</div>' : "") + detail + '</div>';
     tl.appendChild(row);
     return row;

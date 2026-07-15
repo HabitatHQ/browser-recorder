@@ -126,11 +126,75 @@ let ringTabUrl: string | undefined;
 let ringTabTitle: string | undefined;
 let ringDebuggerSessionId: string | null = null;
 let ringVideoActive = false;
-let ringConsoleEvents: TimestampedEvent[] = [];
-let ringNetworkEvents: TimestampedEvent[] = [];
-let ringInteractionEvents: TimestampedEvent[] = [];
-let ringPerformanceEvents: TimestampedEvent[] = [];
+// Per-tab retained buffers. When the user switches away, the old tab's data is
+// kept here (and merged on export) until it ages out of the window; only the
+// currently focused tab actively streams new events in. Video is the exception —
+// it belongs to the recording tab only and is not retained (ringVideoChunks).
+interface RingTabBuffer {
+  tabId: number;
+  url: string | undefined;
+  title: string | undefined;
+  host: string | null;
+  console: TimestampedEvent[];
+  network: TimestampedEvent[];
+  interactions: TimestampedEvent[];
+  performance: TimestampedEvent[];
+  lastActiveMs: number;
+}
+// Cap on retained tabs so the window can't grow without bound; pinned sites are
+// evicted last.
+const MAX_RETAINED_TABS = 8;
+const ringBuffers = new Map<number, RingTabBuffer>();
 let ringVideoChunks: RingVideoChunk[] = [];
+
+function ringBufferSize(buf: RingTabBuffer): number {
+  return buf.console.length + buf.network.length + buf.interactions.length + buf.performance.length;
+}
+
+// Get-or-create the buffer for a tab and mark it freshly active. Evicts the
+// oldest non-pinned retained buffer when over the cap.
+function ensureRingBuffer(
+  tabId: number,
+  url: string | undefined,
+  title: string | undefined
+): RingTabBuffer {
+  let buf = ringBuffers.get(tabId);
+  if (buf) {
+    buf.url = url;
+    buf.title = title;
+    buf.host = hostFromUrl(url);
+    buf.lastActiveMs = Date.now();
+  } else {
+    buf = {
+      tabId,
+      url,
+      title,
+      host: hostFromUrl(url),
+      console: [],
+      network: [],
+      interactions: [],
+      performance: [],
+      lastActiveMs: Date.now(),
+    };
+    ringBuffers.set(tabId, buf);
+  }
+  evictRingBuffersIfNeeded(tabId);
+  return buf;
+}
+
+function evictRingBuffersIfNeeded(keepTabId: number): void {
+  if (ringBuffers.size <= MAX_RETAINED_TABS) return;
+  const candidates = [...ringBuffers.values()].filter((b) => b.tabId !== keepTabId);
+  const nonPinned = candidates.filter((b) => b.host === null || !ringPins.includes(b.host));
+  const pool = (nonPinned.length > 0 ? nonPinned : candidates).sort(
+    (a, b) => a.lastActiveMs - b.lastActiveMs
+  );
+  let i = 0;
+  while (ringBuffers.size > MAX_RETAINED_TABS && i < pool.length) {
+    ringBuffers.delete(pool[i].tabId);
+    i++;
+  }
+}
 
 async function initState(): Promise<void> {
   bgSession = await getSession();
@@ -441,14 +505,18 @@ export default defineBackground(() => {
         }
       } else if (ringActive && ringTabId === tabId) {
         pruneRingBuffer();
-        const now = Date.now();
-        for (const ev of events) {
-          const timestamped = { timestamp: now, event: ev };
-          if (ev.kind === "console") ringConsoleEvents.push(timestamped);
-          else if (ev.kind === "network" || ev.kind === "websocket" || ev.kind === "sse")
-            ringNetworkEvents.push(timestamped);
-          else if (ev.kind === "action") ringInteractionEvents.push(timestamped);
-          else if (ev.kind === "performance") ringPerformanceEvents.push(timestamped);
+        const buf = ringBuffers.get(tabId);
+        if (buf) {
+          const now = Date.now();
+          buf.lastActiveMs = now;
+          for (const ev of events) {
+            const timestamped = { timestamp: now, event: ev };
+            if (ev.kind === "console") buf.console.push(timestamped);
+            else if (ev.kind === "network" || ev.kind === "websocket" || ev.kind === "sse")
+              buf.network.push(timestamped);
+            else if (ev.kind === "action") buf.interactions.push(timestamped);
+            else if (ev.kind === "performance") buf.performance.push(timestamped);
+          }
         }
       }
     },
@@ -1172,35 +1240,43 @@ function pruneRingBuffer(): void {
   const now = Date.now();
   const dataCutoff = now - ringConfig.dataDurationSec * 1000;
   const videoCutoff = now - ringConfig.videoDurationSec * 1000;
-  ringConsoleEvents = ringConsoleEvents.filter((e) => e.timestamp >= dataCutoff);
-  ringNetworkEvents = ringNetworkEvents.filter((e) => e.timestamp >= dataCutoff);
-  ringInteractionEvents = ringInteractionEvents.filter((e) => e.timestamp >= dataCutoff);
-  ringPerformanceEvents = ringPerformanceEvents.filter((e) => e.timestamp >= dataCutoff);
+  for (const buf of ringBuffers.values()) {
+    buf.console = buf.console.filter((e) => e.timestamp >= dataCutoff);
+    buf.network = buf.network.filter((e) => e.timestamp >= dataCutoff);
+    buf.interactions = buf.interactions.filter((e) => e.timestamp >= dataCutoff);
+    buf.performance = buf.performance.filter((e) => e.timestamp >= dataCutoff);
+    // Drop a retained buffer once it has aged out entirely; keep the tab we're
+    // actively recording even while momentarily empty.
+    if (ringBufferSize(buf) === 0 && buf.tabId !== ringTabId) ringBuffers.delete(buf.tabId);
+  }
   ringVideoChunks = ringVideoChunks.filter((c) => c.timestamp >= videoCutoff);
 }
 
 function getRingStatus(): RingStatus {
-  const allEvents = [
-    ...ringConsoleEvents,
-    ...ringNetworkEvents,
-    ...ringInteractionEvents,
-    ...ringPerformanceEvents,
-  ];
-  const oldest = allEvents.length > 0 ? Math.min(...allEvents.map((e) => e.timestamp)) : null;
+  let consoleN = 0;
+  let networkN = 0;
+  let interactionsN = 0;
+  let oldest: number | null = null;
+  let retainedTabCount = 0;
+  for (const buf of ringBuffers.values()) {
+    consoleN += buf.console.length;
+    networkN += buf.network.length;
+    interactionsN += buf.interactions.length;
+    for (const arr of [buf.console, buf.network, buf.interactions, buf.performance]) {
+      for (const e of arr) if (oldest === null || e.timestamp < oldest) oldest = e.timestamp;
+    }
+    if (buf.tabId !== ringTabId && ringBufferSize(buf) > 0) retainedTabCount++;
+  }
   return {
     active: ringEnabled,
     tabId: ringActive ? ringTabId : null,
     tabUrl: ringActive ? ringTabUrl : undefined,
     tabTitle: ringActive ? ringTabTitle : undefined,
     oldestEventMs: oldest,
-    eventCounts: {
-      console: ringConsoleEvents.length,
-      network: ringNetworkEvents.length,
-      interactions: ringInteractionEvents.length,
-    },
+    eventCounts: { console: consoleN, network: networkN, interactions: interactionsN },
     hasVideo: ringVideoChunks.length > 0,
     reason: ringEnabled ? ringReason : null,
-    retainedTabCount: 0,
+    retainedTabCount,
   };
 }
 
@@ -1218,6 +1294,7 @@ async function applyRingEnabled(enabled: boolean): Promise<void> {
 
   if (!enabled) {
     await stopActiveRecording();
+    ringBuffers.clear();
     ringReason = null;
     return;
   }
@@ -1338,6 +1415,9 @@ async function startRingOnTab(tabId: number): Promise<void> {
     ringTabUrl = tab.url;
     ringTabTitle = tab.title;
     ringActive = true;
+    // Reuse this tab's retained buffer if it still has recent data, else start
+    // a fresh one — so returning to a tab picks up its history.
+    ensureRingBuffer(tabId, tab.url, tab.title);
 
     // The ring honors the performance beta toggle so always-on capture matches
     // what an explicit session would collect.
@@ -1358,22 +1438,24 @@ async function startRingOnTab(tabId: number): Promise<void> {
   }
 }
 
-// Stop the active recording (video + debugger session) and clear the buffer.
+// Stop actively recording (video + debugger session). The tab's buffered data is
+// RETAINED for the merged export; only video is dropped (it follows focus only).
 // Does not touch `ringEnabled` — the feature stays on, just idle.
 async function stopActiveRecording(): Promise<void> {
+  const stoppingTabId = ringTabId;
   ringActive = false;
   await stopRingVideoCapture();
   if (ringDebuggerSessionId) {
     await debuggerBridge.discardSession(ringDebuggerSessionId).catch(() => {});
     ringDebuggerSessionId = null;
   }
+  if (stoppingTabId !== null) {
+    const buf = ringBuffers.get(stoppingTabId);
+    if (buf) buf.lastActiveMs = Date.now();
+  }
   ringTabId = null;
   ringTabUrl = undefined;
   ringTabTitle = undefined;
-  ringConsoleEvents = [];
-  ringNetworkEvents = [];
-  ringInteractionEvents = [];
-  ringPerformanceEvents = [];
   ringVideoChunks = [];
 }
 
@@ -1399,15 +1481,46 @@ async function snapshotRingAndExport(): Promise<void> {
     await writeToOpfs(videoOpfsFilename, combined);
   }
 
+  // Merge every retained tab's events into one timeline. The report already
+  // sorts by each event's own timestamp, so concatenation is enough for time
+  // ordering. When more than one tab contributed, tag each event with its source
+  // so an interleaved repro reads coherently; a single-tab export stays unlabeled.
+  const buffers = [...ringBuffers.values()].filter((b) => ringBufferSize(b) > 0);
+  const multiTab = buffers.length > 1;
+  const label = (buf: RingTabBuffer, event: unknown): unknown => {
+    if (!multiTab || typeof event !== "object" || event === null) return event;
+    return {
+      ...(event as Record<string, unknown>),
+      __ringSource: { tabId: buf.tabId, title: buf.title, host: buf.host },
+    };
+  };
+
+  const consoleEvents: unknown[] = [];
+  const networkEvents: unknown[] = [];
+  const interactionEvents: unknown[] = [];
+  const performanceEvents: unknown[] = [];
+  for (const buf of buffers) {
+    for (const e of buf.console) consoleEvents.push(label(buf, e.event));
+    for (const e of buf.network) networkEvents.push(label(buf, e.event));
+    for (const e of buf.interactions) interactionEvents.push(label(buf, e.event));
+    for (const e of buf.performance) performanceEvents.push(label(buf, e.event));
+  }
+
+  // Primary tab for the report title: the one recording now, else the most
+  // recently active retained tab (the ineligible-focus fallback).
+  const primary =
+    (ringTabId !== null ? ringBuffers.get(ringTabId) : undefined) ??
+    [...buffers].sort((a, b) => b.lastActiveMs - a.lastActiveMs)[0];
+
   const snapshot: RingSnapshot = {
     id: crypto.randomUUID(),
-    tabUrl: ringTabUrl,
-    tabTitle: ringTabTitle,
+    tabUrl: primary?.url ?? ringTabUrl,
+    tabTitle: primary?.title ?? ringTabTitle,
     startedAt: Date.now(),
-    console: ringConsoleEvents.map((e) => e.event),
-    network: ringNetworkEvents.map((e) => e.event),
-    interactions: ringInteractionEvents.map((e) => e.event),
-    performance: ringPerformanceEvents.map((e) => e.event),
+    console: consoleEvents,
+    network: networkEvents,
+    interactions: interactionEvents,
+    performance: performanceEvents,
     videoOpfsFilename,
   };
 
