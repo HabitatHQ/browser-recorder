@@ -120,6 +120,9 @@ let ringConfig: RingConfig = DEFAULT_RING_CONFIG;
 let ringEnabled = false;
 let ringReason: RingScopeReason | null = null;
 let ringPins: string[] = [];
+// True while an explicit recording session has suspended the ring (they share a
+// single video stream). Resumed automatically when the session ends.
+let ringPausedForSession = false;
 let ringActive = false;
 let ringTabId: number | null = null;
 let ringTabUrl: string | undefined;
@@ -595,6 +598,7 @@ export default defineBackground(() => {
       url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
     });
     recorderTabId = recorderTab.id ?? null;
+    await resumeRingAfterSession();
   });
 
   // Re-inject the replay recorder after a navigation so recording resumes on the
@@ -671,6 +675,9 @@ async function handleMessage(message: BgMessage) {
 
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) return fail("No active tab found");
+
+      // An explicit session owns the single video stream — suspend the ring.
+      await pauseRingForSession();
 
       const session: Session = {
         id: crypto.randomUUID(),
@@ -781,6 +788,7 @@ async function handleMessage(message: BgMessage) {
         url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
       });
       recorderTabId = recorderTab.id ?? null;
+      await resumeRingAfterSession();
       return ok(undefined);
     }
 
@@ -851,6 +859,7 @@ async function handleMessage(message: BgMessage) {
       bgSession = null;
       bgCounts = emptyCounts();
       await setSession(null);
+      await resumeRingAfterSession();
       return ok(undefined);
     }
 
@@ -1285,6 +1294,39 @@ function isRingEligible(url: string | undefined): RingEligibility {
   return evaluateRingScope(url, ringConfig.scope, ringPins);
 }
 
+// Trust signal: a blue dot on the toolbar icon while a tab is actively being
+// ring-recorded, visually distinct from the red "REC" of an explicit session.
+// Never overrides an active session's badge (sessions pause the ring anyway).
+function setRingBadge(on: boolean): void {
+  if (bgSession && bgSession.status === "recording") return;
+  if (on) {
+    chrome.action.setBadgeText({ text: "●" });
+    chrome.action.setBadgeBackgroundColor({ color: "#3b82f6" });
+  } else {
+    chrome.action.setBadgeText({ text: "" });
+  }
+}
+
+// Suspend the ring so an explicit recording session can own the video stream.
+async function pauseRingForSession(): Promise<void> {
+  ringPausedForSession = true;
+  if (ringActive) await stopActiveRecording();
+}
+
+// Resume the ring after an explicit session ends (if it was on). It re-attaches
+// once the user focuses an in-scope tab.
+async function resumeRingAfterSession(): Promise<void> {
+  if (!ringPausedForSession) return;
+  ringPausedForSession = false;
+  if (!ringEnabled) return;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) await refocusRing(tab.id, tab.url);
+  } catch {
+    // no focused tab
+  }
+}
+
 // Turn the ring feature on/off. Persists `enabled`, and when turning on with an
 // empty allowlist auto-pins the focused site so recording isn't dead on arrival.
 async function applyRingEnabled(enabled: boolean): Promise<void> {
@@ -1318,7 +1360,7 @@ async function refocusActiveTab(): Promise<void> {
 // Central focus-follows logic: recording tracks the focused tab, gated by scope.
 // Called on tab activation, focused-tab navigation, and scope/pin changes.
 async function refocusRing(tabId: number, url?: string): Promise<void> {
-  if (!ringEnabled) return;
+  if (!ringEnabled || ringPausedForSession) return;
   let tabUrl = url;
   if (tabUrl === undefined) {
     try {
@@ -1431,6 +1473,7 @@ async function startRingOnTab(tabId: number): Promise<void> {
     if (ringConfig.videoDurationSec > 0) {
       await startRingVideoCapture(tabId);
     }
+    setRingBadge(true);
   } catch (err) {
     reportNonFatalError("Failed to start ring on tab", err);
     ringActive = false;
@@ -1457,6 +1500,7 @@ async function stopActiveRecording(): Promise<void> {
   ringTabUrl = undefined;
   ringTabTitle = undefined;
   ringVideoChunks = [];
+  setRingBadge(false);
 }
 
 async function rotateRingToTab(newTabId: number): Promise<void> {
