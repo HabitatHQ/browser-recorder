@@ -5,7 +5,12 @@ import { Switch } from "@/components/ui/switch";
 import { formatDuration, useElapsedMs, useSession } from "@/hooks/use-session";
 import { sendToBackground } from "@/lib/messaging";
 import { canOpenSidePanel, openSidePanel, useDismiss, useSurface } from "@/lib/surface";
-import { type CaptureConfig, DEFAULT_CAPTURE_CONFIG, type RingStatus } from "@/lib/types";
+import {
+  type CaptureConfig,
+  DEFAULT_CAPTURE_CONFIG,
+  type RingStatus,
+  type RingTabInfo,
+} from "@/lib/types";
 import {
   AlertTriangle,
   Camera,
@@ -38,9 +43,77 @@ function formatBufferedTime(oldestMs: number | null): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
+// Plain-language explanation for why the focused tab isn't being recorded, so an
+// empty capture never looks broken. Returns null when the tab is recordable.
+function scopeExplanation(reason: RingStatus["reason"]): string | null {
+  switch (reason) {
+    case "empty-allowlist":
+      return "No sites allowed yet — pin a tab below to start recording.";
+    case "not-in-allowlist":
+      return "This site isn't in your allowlist. Pin it below to record it.";
+    case "blocked":
+      return "This site is blocked and won't be recorded.";
+    case "internal":
+      return "Browser pages aren't recorded. Switch to a website to capture.";
+    default:
+      return null;
+  }
+}
+
+function RingTabRow({
+  tab,
+  onPinToggle,
+  busy,
+}: {
+  tab: RingTabInfo;
+  onPinToggle: (tab: RingTabInfo, pin: boolean) => void;
+  busy: boolean;
+}) {
+  const label = tab.host ?? tab.title ?? "Tab";
+  const internal = tab.reason === "internal";
+  const blocked = tab.reason === "blocked";
+  const inScopeByRule = tab.recordable && !tab.pinned;
+  const canToggle = !internal && !blocked && !inScopeByRule && tab.host !== null;
+
+  let badge: { text: string; cls: string } | null = null;
+  if (tab.isRecording) badge = { text: "● REC", cls: "text-red-500" };
+  else if (blocked) badge = { text: "blocked", cls: "text-muted-foreground" };
+  else if (internal) badge = { text: "system", cls: "text-muted-foreground/60" };
+  else if (tab.pinned) badge = { text: "pinned", cls: "text-primary" };
+  else if (inScopeByRule) badge = { text: "in scope", cls: "text-muted-foreground" };
+
+  return (
+    <div className="flex items-center gap-2 py-0.5">
+      {canToggle ? (
+        <input
+          type="checkbox"
+          className="h-3 w-3 shrink-0 accent-primary"
+          checked={tab.pinned}
+          disabled={busy}
+          onChange={(e) => onPinToggle(tab, e.target.checked)}
+          aria-label={tab.pinned ? `Unpin ${label}` : `Pin ${label} for recording`}
+          title={tab.pinned ? "Unpin this site" : "Pin this site to record it"}
+        />
+      ) : (
+        <span className="inline-block h-3 w-3 shrink-0" />
+      )}
+      <span className="truncate text-xs" title={tab.title ?? tab.url ?? label}>
+        {label}
+      </span>
+      {badge && (
+        <span className={`ml-auto shrink-0 text-[10px] font-medium ${badge.cls}`}>
+          {badge.text}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function RingSection() {
   const [status, setStatus] = useState<RingStatus | null>(null);
+  const [tabs, setTabs] = useState<RingTabInfo[]>([]);
   const [toggling, setToggling] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const statusRef = useRef<RingStatus | null>(null);
   const dismiss = useDismiss();
@@ -50,6 +123,13 @@ function RingSection() {
       .then((s) => {
         statusRef.current = s;
         setStatus(s);
+        if (s.active) {
+          sendToBackground<RingTabInfo[]>({ type: "get-ring-tabs" })
+            .then(setTabs)
+            .catch(() => {});
+        } else {
+          setTabs([]);
+        }
       })
       .catch(() => {});
   };
@@ -70,10 +150,28 @@ function RingSection() {
       const result = await sendToBackground<RingStatus>({ type: "toggle-ring", enabled: next });
       statusRef.current = result;
       setStatus(result);
+      fetchStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setToggling(false);
+    }
+  };
+
+  const onPinToggle = async (tab: RingTabInfo, pin: boolean) => {
+    if (!tab.host || pinBusy) return;
+    setPinBusy(true);
+    setError(null);
+    try {
+      await sendToBackground<RingStatus>({
+        type: pin ? "pin-site" : "unpin-site",
+        host: tab.host,
+      });
+      fetchStatus();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPinBusy(false);
     }
   };
 
@@ -92,6 +190,7 @@ function RingSection() {
       (status?.eventCounts.network ?? 0) +
       (status?.eventCounts.interactions ?? 0) >
     0;
+  const explanation = status ? scopeExplanation(status.reason) : null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -112,7 +211,9 @@ function RingSection() {
 
       {active && status && (
         <div className="text-xs text-muted-foreground pl-6">
-          {hasEvents ? (
+          {explanation ? (
+            explanation
+          ) : hasEvents ? (
             <>
               {formatBufferedTime(status.oldestEventMs)} buffered · {status.eventCounts.console}{" "}
               console · {status.eventCounts.network} network
@@ -120,10 +221,24 @@ function RingSection() {
                 ? ` · ${status.eventCounts.interactions} int`
                 : ""}
               {status.hasVideo ? " · video" : ""}
+              {status.retainedTabCount > 0
+                ? ` · +${status.retainedTabCount} tab${status.retainedTabCount > 1 ? "s" : ""}`
+                : ""}
             </>
           ) : (
             "Buffering…"
           )}
+        </div>
+      )}
+
+      {active && tabs.length > 0 && (
+        <div className="flex flex-col gap-0.5 pl-6">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+            Tabs in this window
+          </p>
+          {tabs.map((t) => (
+            <RingTabRow key={t.tabId} tab={t} onPinToggle={onPinToggle} busy={pinBusy} />
+          ))}
         </div>
       )}
 
