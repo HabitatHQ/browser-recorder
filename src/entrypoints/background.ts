@@ -20,8 +20,10 @@ import { fail, ok } from "@/lib/messaging";
 import { appendBytesToOpfs, writeToOpfs } from "@/lib/opfs";
 import { injectReplayRecorderIntoTab, stopReplayInTab } from "@/lib/replay";
 import { isReplayEventsMessage } from "@/lib/replay-messaging";
+import { type RingEligibility, evaluateRingScope, hostFromUrl } from "@/lib/ring/scope";
 import {
   OPFS_PREFIX,
+  addRingPin,
   appendStandaloneDomSnapshotFilename,
   appendStandaloneScreenshotFilename,
   debuggerEventsOpfsFilename,
@@ -29,10 +31,12 @@ import {
   getCounts,
   getLocalBackupSession,
   getRingConfig,
+  getRingPins,
   getSession,
   getSettings,
   getStandaloneDomSnapshotFilenames,
   getStandaloneScreenshotFilenames,
+  removeRingPin,
   replayOpfsFilename,
   saveCounts,
   saveRingConfig,
@@ -47,8 +51,10 @@ import {
   type BgMessage,
   DEFAULT_RING_CONFIG,
   type RingConfig,
+  type RingScopeReason,
   type RingSnapshot,
   type RingStatus,
+  type RingTabInfo,
   type Session,
   type SessionCounts,
 } from "@/lib/types";
@@ -108,6 +114,12 @@ interface RingVideoChunk {
 }
 
 let ringConfig: RingConfig = DEFAULT_RING_CONFIG;
+// `ringEnabled` is the feature toggle (survives across tab switches and SW
+// restarts); `ringActive` means a tab is streaming data in right now. The ring
+// can be enabled but inactive when the focused tab is out of scope.
+let ringEnabled = false;
+let ringReason: RingScopeReason | null = null;
+let ringPins: string[] = [];
 let ringActive = false;
 let ringTabId: number | null = null;
 let ringTabUrl: string | undefined;
@@ -134,6 +146,8 @@ async function initState(): Promise<void> {
   }
   bgCounts = await getCounts();
   ringConfig = await getRingConfig();
+  ringPins = await getRingPins();
+  ringEnabled = ringConfig.enabled;
   await loadDiagnostics();
   await loadErrorLog();
   // Route every reportNonFatalError in this context into the per-session
@@ -344,6 +358,18 @@ async function initializeBackgroundState(): Promise<void> {
   }
 
   await sweepOrphanedOpfsFiles();
+
+  // Resume the ring after a service-worker suspend/restart: if the feature is on,
+  // re-evaluate the focused tab and start capturing if it's in scope. (Data
+  // buffered before the suspend is not durable — see the product spec.)
+  if (ringEnabled && !bgSession) {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) await refocusRing(tab.id, tab.url);
+    } catch {
+      // no focused tab yet
+    }
+  }
 }
 
 // Resolves once initializeBackgroundState() has restored persisted state. Every
@@ -480,6 +506,13 @@ export default defineBackground(() => {
       return;
     }
 
+    if (ringActive && ringTabId === tabId) {
+      // The tab the ring was recording closed — stop capture. Its buffered data
+      // is retained (and merged on export) until it ages out.
+      await stopActiveRecording();
+      ringReason = null;
+    }
+
     if (bgSession?.tabId !== tabId) return;
     // Session tab closed — treat the same as stop-session so data isn't lost.
     // shouldPreserveTab prevents the debugger bridge from discarding the session
@@ -500,24 +533,34 @@ export default defineBackground(() => {
   // new document. rrweb emits a fresh full snapshot, and the appended NDJSON
   // stream stays continuous across the reload.
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (changeInfo.status !== "complete") return;
-    void backgroundReady.then(() => {
-      if (bgSession?.tabId !== tabId || bgSession.status !== "recording") return;
-      if (!bgSession.captureConfig.replay) return;
-      void injectReplayRecorderIntoTab(tabId);
-    });
+    if (changeInfo.status === "complete") {
+      void backgroundReady.then(() => {
+        if (bgSession?.tabId !== tabId || bgSession.status !== "recording") return;
+        if (!bgSession.captureConfig.replay) return;
+        void injectReplayRecorderIntoTab(tabId);
+      });
+    }
+
+    // Re-evaluate ring scope when the focused tab navigates. Navigating to a
+    // blocked or out-of-scope URL must stop capture immediately; navigating an
+    // in-scope tab to another in-scope URL keeps recording uninterrupted.
+    if (changeInfo.url !== undefined || changeInfo.status === "complete") {
+      void backgroundReady.then(async () => {
+        if (!ringEnabled) return;
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          if (!tab.active) return;
+          await refocusRing(tabId, changeInfo.url ?? tab.url);
+        } catch {
+          // tab gone
+        }
+      });
+    }
   });
 
   chrome.tabs.onActivated.addListener(async ({ tabId }) => {
     await backgroundReady;
-    if (!ringActive || ringTabId === tabId) return;
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (!tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("about:")) return;
-      await rotateRingToTab(tabId);
-    } catch {
-      // tab may not exist yet
-    }
+    await refocusRing(tabId);
   });
 
   // Listeners are registered; now restore persisted state and open the gate so
@@ -827,18 +870,42 @@ async function handleMessage(message: BgMessage) {
     case "get-ring-config":
       return ok(ringConfig);
 
-    case "save-ring-config":
+    case "save-ring-config": {
+      const prevEnabled = ringConfig.enabled;
       ringConfig = message.ringConfig;
       await saveRingConfig(ringConfig);
-      return ok(undefined);
-
-    case "toggle-ring": {
-      if (message.enabled && !ringActive) {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab?.id) await startRingOnTab(tab.id);
-      } else if (!message.enabled && ringActive) {
-        await stopRingOnTab();
+      if (ringConfig.enabled !== prevEnabled) {
+        await applyRingEnabled(ringConfig.enabled);
+      } else if (ringEnabled) {
+        // Scope or durations may have changed — re-evaluate the focused tab.
+        await refocusActiveTab();
       }
+      return ok(undefined);
+    }
+
+    case "toggle-ring":
+      await applyRingEnabled(message.enabled);
+      return ok(getRingStatus());
+
+    case "get-ring-tabs":
+      return ok(await listRingTabs());
+
+    case "pin-site": {
+      ringPins = await addRingPin(message.host);
+      await refocusActiveTab();
+      return ok(getRingStatus());
+    }
+
+    case "unpin-site": {
+      ringPins = await removeRingPin(message.host);
+      await refocusActiveTab();
+      return ok(getRingStatus());
+    }
+
+    case "save-ring-scope": {
+      ringConfig = { ...ringConfig, scope: message.scope };
+      await saveRingConfig(ringConfig);
+      if (ringEnabled) await refocusActiveTab();
       return ok(getRingStatus());
     }
 
@@ -1121,10 +1188,10 @@ function getRingStatus(): RingStatus {
   ];
   const oldest = allEvents.length > 0 ? Math.min(...allEvents.map((e) => e.timestamp)) : null;
   return {
-    active: ringActive,
-    tabId: ringTabId,
-    tabUrl: ringTabUrl,
-    tabTitle: ringTabTitle,
+    active: ringEnabled,
+    tabId: ringActive ? ringTabId : null,
+    tabUrl: ringActive ? ringTabUrl : undefined,
+    tabTitle: ringActive ? ringTabTitle : undefined,
     oldestEventMs: oldest,
     eventCounts: {
       console: ringConsoleEvents.length,
@@ -1132,9 +1199,91 @@ function getRingStatus(): RingStatus {
       interactions: ringInteractionEvents.length,
     },
     hasVideo: ringVideoChunks.length > 0,
-    reason: null,
+    reason: ringEnabled ? ringReason : null,
     retainedTabCount: 0,
   };
+}
+
+// Evaluate a URL against the current scope + pins.
+function isRingEligible(url: string | undefined): RingEligibility {
+  return evaluateRingScope(url, ringConfig.scope, ringPins);
+}
+
+// Turn the ring feature on/off. Persists `enabled`, and when turning on with an
+// empty allowlist auto-pins the focused site so recording isn't dead on arrival.
+async function applyRingEnabled(enabled: boolean): Promise<void> {
+  ringEnabled = enabled;
+  ringConfig = { ...ringConfig, enabled };
+  await saveRingConfig(ringConfig);
+
+  if (!enabled) {
+    await stopActiveRecording();
+    ringReason = null;
+    return;
+  }
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return;
+  const elig = isRingEligible(tab.url);
+  if (elig.reason === "empty-allowlist") {
+    const host = hostFromUrl(tab.url);
+    if (host) ringPins = await addRingPin(host);
+  }
+  await refocusRing(tab.id, tab.url);
+}
+
+// Re-evaluate whichever tab is currently focused (after a scope/pin change).
+async function refocusActiveTab(): Promise<void> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id) await refocusRing(tab.id, tab.url);
+}
+
+// Central focus-follows logic: recording tracks the focused tab, gated by scope.
+// Called on tab activation, focused-tab navigation, and scope/pin changes.
+async function refocusRing(tabId: number, url?: string): Promise<void> {
+  if (!ringEnabled) return;
+  let tabUrl = url;
+  if (tabUrl === undefined) {
+    try {
+      tabUrl = (await chrome.tabs.get(tabId)).url;
+    } catch {
+      return; // tab gone
+    }
+  }
+
+  const elig = isRingEligible(tabUrl);
+  ringReason = elig.reason;
+
+  if (elig.recordable) {
+    if (ringTabId !== tabId) await rotateRingToTab(tabId);
+  } else if (ringActive) {
+    // Focused (or navigated to) an ineligible page — stop capturing.
+    await stopActiveRecording();
+  }
+}
+
+// Build the popup's tab picker: every tab in the focused window with its
+// eligibility, pin state, and whether it's the one recording now.
+async function listRingTabs(): Promise<RingTabInfo[]> {
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  const infos: RingTabInfo[] = [];
+  for (const t of tabs) {
+    if (t.id === undefined) continue;
+    const elig = isRingEligible(t.url);
+    const host = hostFromUrl(t.url);
+    infos.push({
+      tabId: t.id,
+      url: t.url,
+      title: t.title,
+      host,
+      recordable: elig.recordable,
+      reason: elig.reason,
+      pinned: host !== null && ringPins.includes(host),
+      isRecording: ringActive && ringTabId === t.id,
+      retained: false,
+    });
+  }
+  return infos;
 }
 
 async function startRingVideoCapture(tabId: number): Promise<void> {
@@ -1209,7 +1358,9 @@ async function startRingOnTab(tabId: number): Promise<void> {
   }
 }
 
-async function stopRingOnTab(): Promise<void> {
+// Stop the active recording (video + debugger session) and clear the buffer.
+// Does not touch `ringEnabled` — the feature stays on, just idle.
+async function stopActiveRecording(): Promise<void> {
   ringActive = false;
   await stopRingVideoCapture();
   if (ringDebuggerSessionId) {
@@ -1227,23 +1378,7 @@ async function stopRingOnTab(): Promise<void> {
 }
 
 async function rotateRingToTab(newTabId: number): Promise<void> {
-  const wasActive = ringActive;
-  if (wasActive) {
-    await stopRingVideoCapture();
-    if (ringDebuggerSessionId) {
-      await debuggerBridge.discardSession(ringDebuggerSessionId).catch(() => {});
-      ringDebuggerSessionId = null;
-    }
-    ringTabId = null;
-    ringTabUrl = undefined;
-    ringTabTitle = undefined;
-    ringConsoleEvents = [];
-    ringNetworkEvents = [];
-    ringInteractionEvents = [];
-    ringPerformanceEvents = [];
-    ringVideoChunks = [];
-    ringActive = false;
-  }
+  if (ringActive) await stopActiveRecording();
   await startRingOnTab(newTabId);
 }
 
