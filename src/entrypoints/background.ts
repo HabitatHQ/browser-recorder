@@ -17,9 +17,17 @@ import {
 import { clearErrorLog, getErrorLog, loadErrorLog, logExtensionError } from "@/lib/error-log";
 import { slugify, toFilenameTimestamp } from "@/lib/export";
 import { fail, ok } from "@/lib/messaging";
-import { appendBytesToOpfs, writeToOpfs } from "@/lib/opfs";
+import { appendBytesToOpfs, readOpfsText, removeFromOpfs, writeToOpfs } from "@/lib/opfs";
 import { injectReplayRecorderIntoTab, stopReplayInTab } from "@/lib/replay";
 import { isReplayEventsMessage } from "@/lib/replay-messaging";
+import {
+  type RingChannel,
+  type RingRecord,
+  decodeRingNdjson,
+  encodeRingRecords,
+  recordsToTabs,
+  tabsToRecords,
+} from "@/lib/ring/persist";
 import { type RingEligibility, evaluateRingScope, hostFromUrl } from "@/lib/ring/scope";
 import {
   OPFS_PREFIX,
@@ -38,6 +46,7 @@ import {
   getStandaloneScreenshotFilenames,
   removeRingPin,
   replayOpfsFilename,
+  ringBufferOpfsFilename,
   saveCounts,
   saveRingConfig,
   saveSettings,
@@ -150,6 +159,15 @@ const MAX_RETAINED_TABS = 8;
 const ringBuffers = new Map<number, RingTabBuffer>();
 let ringVideoChunks: RingVideoChunk[] = [];
 
+// Crash-resilience: every captured event is appended to a rolling OPFS NDJSON
+// file, so a service-worker suspend or a browser crash/restart doesn't lose the
+// buffered window (video is the exception — it stays in memory). Appends are
+// serialized; the file is compacted (rewritten from the pruned in-memory state)
+// after enough appends so it can't grow without bound.
+const RING_COMPACT_EVERY = 400;
+let ringAppendChain: Promise<void> = Promise.resolve();
+let ringAppendsSinceCompaction = 0;
+
 function ringBufferSize(buf: RingTabBuffer): number {
   return buf.console.length + buf.network.length + buf.interactions.length + buf.performance.length;
 }
@@ -197,6 +215,70 @@ function evictRingBuffersIfNeeded(keepTabId: number): void {
     ringBuffers.delete(pool[i].tabId);
     i++;
   }
+}
+
+// ── Ring crash-resilience (OPFS) ──────────────────────────────────────────────
+
+// Append a batch of just-captured events to the rolling file. Serialized through
+// ringAppendChain; triggers a compaction once enough lines have accumulated.
+function appendRingRecords(records: RingRecord[]): void {
+  if (records.length === 0) return;
+  const bytes = new TextEncoder().encode(encodeRingRecords(records));
+  ringAppendChain = ringAppendChain
+    .then(() => appendBytesToOpfs(ringBufferOpfsFilename(), bytes))
+    .catch((err) => reportNonFatalError("Failed to persist ring events", err));
+  ringAppendsSinceCompaction += records.length;
+  if (ringAppendsSinceCompaction >= RING_COMPACT_EVERY) {
+    ringAppendsSinceCompaction = 0;
+    ringAppendChain = ringAppendChain
+      .then(() => compactRingBufferFile())
+      .catch((err) => reportNonFatalError("Failed to compact ring buffer", err));
+  }
+}
+
+// Rewrite the file from the pruned in-memory buffers so it never grows without
+// bound. Deletes the file when nothing is buffered. Only call on ringAppendChain.
+async function compactRingBufferFile(): Promise<void> {
+  pruneRingBuffer();
+  const ndjson = encodeRingRecords(tabsToRecords([...ringBuffers.values()]));
+  if (ndjson === "") {
+    await removeFromOpfs(ringBufferOpfsFilename());
+  } else {
+    await writeToOpfs(ringBufferOpfsFilename(), new TextEncoder().encode(ndjson));
+  }
+}
+
+// Restore buffers persisted before a suspend/crash. Note: after a full browser
+// restart Chrome reassigns tab ids, so restored buffers won't re-attach to a
+// live tab — the data still ages out and is included in an export.
+async function restoreRingBuffers(): Promise<void> {
+  try {
+    const text = await readOpfsText(ringBufferOpfsFilename());
+    if (!text) return;
+    const cutoff = Date.now() - ringConfig.dataDurationSec * 1000;
+    const tabs = recordsToTabs(decodeRingNdjson(text), cutoff);
+    for (const t of tabs) {
+      ringBuffers.set(t.tabId, { ...t, host: hostFromUrl(t.url) });
+    }
+    if (ringBuffers.size > MAX_RETAINED_TABS) {
+      const sorted = [...ringBuffers.values()].sort((a, b) => b.lastActiveMs - a.lastActiveMs);
+      for (const victim of sorted.slice(MAX_RETAINED_TABS)) ringBuffers.delete(victim.tabId);
+    }
+    // Rewrite the file to the pruned, capped state.
+    ringAppendChain = ringAppendChain
+      .then(() => compactRingBufferFile())
+      .catch((err) => reportNonFatalError("Failed to compact ring buffer", err));
+  } catch (err) {
+    reportNonFatalError("Failed to restore ring buffers", err);
+  }
+}
+
+async function deleteRingBufferFile(): Promise<void> {
+  ringAppendsSinceCompaction = 0;
+  ringAppendChain = ringAppendChain
+    .then(() => removeFromOpfs(ringBufferOpfsFilename()))
+    .catch(() => {});
+  await ringAppendChain;
 }
 
 async function initState(): Promise<void> {
@@ -424,11 +506,16 @@ async function initializeBackgroundState(): Promise<void> {
     }
   }
 
+  // Restore the persisted ring window before the sweep (which would otherwise
+  // treat the buffer file as orphaned) and before resuming capture.
+  if (ringEnabled) await restoreRingBuffers();
+
   await sweepOrphanedOpfsFiles();
 
   // Resume the ring after a service-worker suspend/restart: if the feature is on,
-  // re-evaluate the focused tab and start capturing if it's in scope. (Data
-  // buffered before the suspend is not durable — see the product spec.)
+  // re-evaluate the focused tab and start capturing if it's in scope. Buffers
+  // restored above are reused; on a fresh browser start tab ids differ, so the
+  // restored data ages out and is still exportable but doesn't re-attach.
   if (ringEnabled && !bgSession) {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -512,14 +599,34 @@ export default defineBackground(() => {
         if (buf) {
           const now = Date.now();
           buf.lastActiveMs = now;
+          const records: RingRecord[] = [];
           for (const ev of events) {
             const timestamped = { timestamp: now, event: ev };
-            if (ev.kind === "console") buf.console.push(timestamped);
-            else if (ev.kind === "network" || ev.kind === "websocket" || ev.kind === "sse")
+            let ch: RingChannel | null = null;
+            if (ev.kind === "console") {
+              buf.console.push(timestamped);
+              ch = "console";
+            } else if (ev.kind === "network" || ev.kind === "websocket" || ev.kind === "sse") {
               buf.network.push(timestamped);
-            else if (ev.kind === "action") buf.interactions.push(timestamped);
-            else if (ev.kind === "performance") buf.performance.push(timestamped);
+              ch = "network";
+            } else if (ev.kind === "action") {
+              buf.interactions.push(timestamped);
+              ch = "interactions";
+            } else if (ev.kind === "performance") {
+              buf.performance.push(timestamped);
+              ch = "performance";
+            }
+            if (ch)
+              records.push({
+                t: now,
+                tab: tabId,
+                u: buf.url ?? null,
+                ti: buf.title ?? null,
+                ch,
+                ev,
+              });
           }
+          appendRingRecords(records);
         }
       }
     },
@@ -1226,6 +1333,8 @@ async function sweepOrphanedOpfsFiles(): Promise<void> {
       ...(sess?.replayOpfsFilename ? [sess.replayOpfsFilename] : []),
       ...(sess?.eventsOpfsFilename ? [sess.eventsOpfsFilename] : []),
       ...(sess ? sess.domSnapshotKeys.map((k) => domSnapshotOpfsFilename(sess.id, k)) : []),
+      // Keep the ring buffer file while the feature is on (disabling deletes it).
+      ...(ringEnabled ? [ringBufferOpfsFilename()] : []),
     ]);
 
     const dir = await navigator.storage.getDirectory();
@@ -1337,6 +1446,7 @@ async function applyRingEnabled(enabled: boolean): Promise<void> {
   if (!enabled) {
     await stopActiveRecording();
     ringBuffers.clear();
+    await deleteRingBufferFile();
     ringReason = null;
     return;
   }

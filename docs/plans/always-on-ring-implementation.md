@@ -91,5 +91,23 @@ Pins match by exact hostname equality (a pin is a concrete host taken from a tab
 - Toolbar badge tint while a tab actively records (distinct from `REC`).
 - Explicit session start pauses the ring; ends resume it (single video stream).
 
-## Success criteria — see product spec. Verified by unit tests for the pure core
-and manual/e2e for the wired behavior.
+## Crash resilience (event data only)
+
+The event buffer survives a service-worker suspend AND a browser crash/restart;
+video stays in-memory (best-effort, follows focus).
+
+- Pure codec `src/lib/ring/persist.ts` (unit-tested): `RingRecord` NDJSON lines,
+  `encode`/`decode` (tolerates blank/truncated lines from a mid-write crash),
+  `recordsToTabs` (regroup + drop past the window), `tabsToRecords` (compaction).
+- Every captured batch is appended to one rolling OPFS file
+  (`ringBufferOpfsFilename()`) via a serialized `ringAppendChain`. After
+  `RING_COMPACT_EVERY` (400) appends the file is compacted — rewritten from the
+  pruned in-memory buffers — so it can't grow without bound.
+- On init, when the ring is enabled, `restoreRingBuffers()` runs *before* the
+  OPFS sweep (which also exempts the file), reloading and pruning the window.
+  After a full browser restart Chrome reassigns tab ids, so restored buffers
+  don't re-attach to a live tab, but the data still ages out and exports.
+- Disabling the ring clears the buffers and deletes the file.
+
+## Success criteria — see product spec. Verified by unit tests for the pure
+cores (scope + persist) and manual/e2e for the wired behavior.

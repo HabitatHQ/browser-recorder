@@ -45,6 +45,13 @@ export function replayOpfsFilename(sessionId: string): string {
   return `${OPFS_PREFIX}replay-${sessionId}.json`;
 }
 
+// Crash-resilient ring buffer — a single rolling NDJSON file (all retained tabs).
+// Survives a service-worker suspend and a browser crash/restart; pruned to the
+// window on read. Fixed name so init can find and the OPFS sweep can exempt it.
+export function ringBufferOpfsFilename(): string {
+  return `${OPFS_PREFIX}ring-buffer.ndjson`;
+}
+
 const KEYS = {
   session: "session",
   counts: "counts",
