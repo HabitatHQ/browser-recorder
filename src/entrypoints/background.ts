@@ -1132,6 +1132,8 @@ function getRingStatus(): RingStatus {
       interactions: ringInteractionEvents.length,
     },
     hasVideo: ringVideoChunks.length > 0,
+    reason: null,
+    retainedTabCount: 0,
   };
 }
 

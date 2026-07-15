@@ -3,6 +3,7 @@ import {
   DEFAULT_CAPTURE_CONFIG,
   DEFAULT_NETWORK_FILTER,
   DEFAULT_RING_CONFIG,
+  DEFAULT_RING_SCOPE,
   DEFAULT_VIDEO_CONFIG,
   type NetworkFilterConfig,
   type RingConfig,
@@ -56,6 +57,8 @@ const KEYS = {
   domSnapshotFilenames: "domSnapshotFilenames",
   ringConfig: "ringConfig",
   ringSnapshot: "ringSnapshot",
+  // Session-scoped hostnames the user pinned for ring recording.
+  ringPins: "ringPins",
   // Crash-safe copy of the active session in chrome.storage.local. Unlike
   // chrome.storage.session this survives a browser crash. Cleared on discard.
   crashSession: "crashSession",
@@ -175,11 +178,44 @@ export async function saveSettings(
 
 export async function getRingConfig(): Promise<RingConfig> {
   const result = await chrome.storage.local.get(KEYS.ringConfig);
-  return (result[KEYS.ringConfig] as RingConfig | undefined) ?? DEFAULT_RING_CONFIG;
+  const stored = result[KEYS.ringConfig] as Partial<RingConfig> | undefined;
+  // Merge defaults so configs stored before `scope` existed gain it, and a
+  // partially-written scope still has every field.
+  return {
+    ...DEFAULT_RING_CONFIG,
+    ...stored,
+    scope: { ...DEFAULT_RING_SCOPE, ...stored?.scope },
+  };
 }
 
 export async function saveRingConfig(ringConfig: RingConfig): Promise<void> {
   await chrome.storage.local.set({ [KEYS.ringConfig]: ringConfig });
+}
+
+// Ring pins — session-scoped hostnames the user opted into from the popup.
+// chrome.storage.session is cleared on browser restart, matching the pin's
+// intended lifetime, and survives a service-worker suspend.
+export async function getRingPins(): Promise<string[]> {
+  const result = await chrome.storage.session.get(KEYS.ringPins);
+  return (result[KEYS.ringPins] as string[] | undefined) ?? [];
+}
+
+export async function setRingPins(pins: string[]): Promise<void> {
+  await chrome.storage.session.set({ [KEYS.ringPins]: pins });
+}
+
+export async function addRingPin(host: string): Promise<string[]> {
+  const pins = await getRingPins();
+  if (pins.includes(host)) return pins;
+  const next = [...pins, host];
+  await setRingPins(next);
+  return next;
+}
+
+export async function removeRingPin(host: string): Promise<string[]> {
+  const next = (await getRingPins()).filter((h) => h !== host);
+  await setRingPins(next);
+  return next;
 }
 
 export async function setRingSnapshot(snapshot: RingSnapshot | null): Promise<void> {
