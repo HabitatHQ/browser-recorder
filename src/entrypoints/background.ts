@@ -17,11 +17,21 @@ import {
 import { clearErrorLog, getErrorLog, loadErrorLog, logExtensionError } from "@/lib/error-log";
 import { slugify, toFilenameTimestamp } from "@/lib/export";
 import { fail, ok } from "@/lib/messaging";
-import { appendBytesToOpfs, writeToOpfs } from "@/lib/opfs";
+import { appendBytesToOpfs, readOpfsText, removeFromOpfs, writeToOpfs } from "@/lib/opfs";
 import { injectReplayRecorderIntoTab, stopReplayInTab } from "@/lib/replay";
 import { isReplayEventsMessage } from "@/lib/replay-messaging";
 import {
+  type RingChannel,
+  type RingRecord,
+  decodeRingNdjson,
+  encodeRingRecords,
+  recordsToTabs,
+  tabsToRecords,
+} from "@/lib/ring/persist";
+import { type RingEligibility, evaluateRingScope, hostFromUrl } from "@/lib/ring/scope";
+import {
   OPFS_PREFIX,
+  addRingPin,
   appendStandaloneDomSnapshotFilename,
   appendStandaloneScreenshotFilename,
   debuggerEventsOpfsFilename,
@@ -29,11 +39,14 @@ import {
   getCounts,
   getLocalBackupSession,
   getRingConfig,
+  getRingPins,
   getSession,
   getSettings,
   getStandaloneDomSnapshotFilenames,
   getStandaloneScreenshotFilenames,
+  removeRingPin,
   replayOpfsFilename,
+  ringBufferOpfsFilename,
   saveCounts,
   saveRingConfig,
   saveSettings,
@@ -47,8 +60,10 @@ import {
   type BgMessage,
   DEFAULT_RING_CONFIG,
   type RingConfig,
+  type RingScopeReason,
   type RingSnapshot,
   type RingStatus,
+  type RingTabInfo,
   type Session,
   type SessionCounts,
 } from "@/lib/types";
@@ -108,17 +123,163 @@ interface RingVideoChunk {
 }
 
 let ringConfig: RingConfig = DEFAULT_RING_CONFIG;
+// `ringEnabled` is the feature toggle (survives across tab switches and SW
+// restarts); `ringActive` means a tab is streaming data in right now. The ring
+// can be enabled but inactive when the focused tab is out of scope.
+let ringEnabled = false;
+let ringReason: RingScopeReason | null = null;
+let ringPins: string[] = [];
+// True while an explicit recording session has suspended the ring (they share a
+// single video stream). Resumed automatically when the session ends.
+let ringPausedForSession = false;
 let ringActive = false;
 let ringTabId: number | null = null;
 let ringTabUrl: string | undefined;
 let ringTabTitle: string | undefined;
 let ringDebuggerSessionId: string | null = null;
 let ringVideoActive = false;
-let ringConsoleEvents: TimestampedEvent[] = [];
-let ringNetworkEvents: TimestampedEvent[] = [];
-let ringInteractionEvents: TimestampedEvent[] = [];
-let ringPerformanceEvents: TimestampedEvent[] = [];
+// Per-tab retained buffers. When the user switches away, the old tab's data is
+// kept here (and merged on export) until it ages out of the window; only the
+// currently focused tab actively streams new events in. Video is the exception —
+// it belongs to the recording tab only and is not retained (ringVideoChunks).
+interface RingTabBuffer {
+  tabId: number;
+  url: string | undefined;
+  title: string | undefined;
+  host: string | null;
+  console: TimestampedEvent[];
+  network: TimestampedEvent[];
+  interactions: TimestampedEvent[];
+  performance: TimestampedEvent[];
+  lastActiveMs: number;
+}
+// Cap on retained tabs so the window can't grow without bound; pinned sites are
+// evicted last.
+const MAX_RETAINED_TABS = 8;
+const ringBuffers = new Map<number, RingTabBuffer>();
 let ringVideoChunks: RingVideoChunk[] = [];
+
+// Crash-resilience: every captured event is appended to a rolling OPFS NDJSON
+// file, so a service-worker suspend or a browser crash/restart doesn't lose the
+// buffered window (video is the exception — it stays in memory). Appends are
+// serialized; the file is compacted (rewritten from the pruned in-memory state)
+// after enough appends so it can't grow without bound.
+const RING_COMPACT_EVERY = 400;
+let ringAppendChain: Promise<void> = Promise.resolve();
+let ringAppendsSinceCompaction = 0;
+
+function ringBufferSize(buf: RingTabBuffer): number {
+  return buf.console.length + buf.network.length + buf.interactions.length + buf.performance.length;
+}
+
+// Get-or-create the buffer for a tab and mark it freshly active. Evicts the
+// oldest non-pinned retained buffer when over the cap.
+function ensureRingBuffer(
+  tabId: number,
+  url: string | undefined,
+  title: string | undefined
+): RingTabBuffer {
+  let buf = ringBuffers.get(tabId);
+  if (buf) {
+    buf.url = url;
+    buf.title = title;
+    buf.host = hostFromUrl(url);
+    buf.lastActiveMs = Date.now();
+  } else {
+    buf = {
+      tabId,
+      url,
+      title,
+      host: hostFromUrl(url),
+      console: [],
+      network: [],
+      interactions: [],
+      performance: [],
+      lastActiveMs: Date.now(),
+    };
+    ringBuffers.set(tabId, buf);
+  }
+  evictRingBuffersIfNeeded(tabId);
+  return buf;
+}
+
+function evictRingBuffersIfNeeded(keepTabId: number): void {
+  if (ringBuffers.size <= MAX_RETAINED_TABS) return;
+  const candidates = [...ringBuffers.values()].filter((b) => b.tabId !== keepTabId);
+  const nonPinned = candidates.filter((b) => b.host === null || !ringPins.includes(b.host));
+  const pool = (nonPinned.length > 0 ? nonPinned : candidates).sort(
+    (a, b) => a.lastActiveMs - b.lastActiveMs
+  );
+  let i = 0;
+  while (ringBuffers.size > MAX_RETAINED_TABS && i < pool.length) {
+    ringBuffers.delete(pool[i].tabId);
+    i++;
+  }
+}
+
+// ── Ring crash-resilience (OPFS) ──────────────────────────────────────────────
+
+// Append a batch of just-captured events to the rolling file. Serialized through
+// ringAppendChain; triggers a compaction once enough lines have accumulated.
+function appendRingRecords(records: RingRecord[]): void {
+  if (records.length === 0) return;
+  const bytes = new TextEncoder().encode(encodeRingRecords(records));
+  ringAppendChain = ringAppendChain
+    .then(() => appendBytesToOpfs(ringBufferOpfsFilename(), bytes))
+    .catch((err) => reportNonFatalError("Failed to persist ring events", err));
+  ringAppendsSinceCompaction += records.length;
+  if (ringAppendsSinceCompaction >= RING_COMPACT_EVERY) {
+    ringAppendsSinceCompaction = 0;
+    ringAppendChain = ringAppendChain
+      .then(() => compactRingBufferFile())
+      .catch((err) => reportNonFatalError("Failed to compact ring buffer", err));
+  }
+}
+
+// Rewrite the file from the pruned in-memory buffers so it never grows without
+// bound. Deletes the file when nothing is buffered. Only call on ringAppendChain.
+async function compactRingBufferFile(): Promise<void> {
+  pruneRingBuffer();
+  const ndjson = encodeRingRecords(tabsToRecords([...ringBuffers.values()]));
+  if (ndjson === "") {
+    await removeFromOpfs(ringBufferOpfsFilename());
+  } else {
+    await writeToOpfs(ringBufferOpfsFilename(), new TextEncoder().encode(ndjson));
+  }
+}
+
+// Restore buffers persisted before a suspend/crash. Note: after a full browser
+// restart Chrome reassigns tab ids, so restored buffers won't re-attach to a
+// live tab — the data still ages out and is included in an export.
+async function restoreRingBuffers(): Promise<void> {
+  try {
+    const text = await readOpfsText(ringBufferOpfsFilename());
+    if (!text) return;
+    const cutoff = Date.now() - ringConfig.dataDurationSec * 1000;
+    const tabs = recordsToTabs(decodeRingNdjson(text), cutoff);
+    for (const t of tabs) {
+      ringBuffers.set(t.tabId, { ...t, host: hostFromUrl(t.url) });
+    }
+    if (ringBuffers.size > MAX_RETAINED_TABS) {
+      const sorted = [...ringBuffers.values()].sort((a, b) => b.lastActiveMs - a.lastActiveMs);
+      for (const victim of sorted.slice(MAX_RETAINED_TABS)) ringBuffers.delete(victim.tabId);
+    }
+    // Rewrite the file to the pruned, capped state.
+    ringAppendChain = ringAppendChain
+      .then(() => compactRingBufferFile())
+      .catch((err) => reportNonFatalError("Failed to compact ring buffer", err));
+  } catch (err) {
+    reportNonFatalError("Failed to restore ring buffers", err);
+  }
+}
+
+async function deleteRingBufferFile(): Promise<void> {
+  ringAppendsSinceCompaction = 0;
+  ringAppendChain = ringAppendChain
+    .then(() => removeFromOpfs(ringBufferOpfsFilename()))
+    .catch(() => {});
+  await ringAppendChain;
+}
 
 async function initState(): Promise<void> {
   bgSession = await getSession();
@@ -134,6 +295,8 @@ async function initState(): Promise<void> {
   }
   bgCounts = await getCounts();
   ringConfig = await getRingConfig();
+  ringPins = await getRingPins();
+  ringEnabled = ringConfig.enabled;
   await loadDiagnostics();
   await loadErrorLog();
   // Route every reportNonFatalError in this context into the per-session
@@ -343,7 +506,24 @@ async function initializeBackgroundState(): Promise<void> {
     }
   }
 
+  // Restore the persisted ring window before the sweep (which would otherwise
+  // treat the buffer file as orphaned) and before resuming capture.
+  if (ringEnabled) await restoreRingBuffers();
+
   await sweepOrphanedOpfsFiles();
+
+  // Resume the ring after a service-worker suspend/restart: if the feature is on,
+  // re-evaluate the focused tab and start capturing if it's in scope. Buffers
+  // restored above are reused; on a fresh browser start tab ids differ, so the
+  // restored data ages out and is still exportable but doesn't re-attach.
+  if (ringEnabled && !bgSession) {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) await refocusRing(tab.id, tab.url);
+    } catch {
+      // no focused tab yet
+    }
+  }
 }
 
 // Resolves once initializeBackgroundState() has restored persisted state. Every
@@ -415,14 +595,38 @@ export default defineBackground(() => {
         }
       } else if (ringActive && ringTabId === tabId) {
         pruneRingBuffer();
-        const now = Date.now();
-        for (const ev of events) {
-          const timestamped = { timestamp: now, event: ev };
-          if (ev.kind === "console") ringConsoleEvents.push(timestamped);
-          else if (ev.kind === "network" || ev.kind === "websocket" || ev.kind === "sse")
-            ringNetworkEvents.push(timestamped);
-          else if (ev.kind === "action") ringInteractionEvents.push(timestamped);
-          else if (ev.kind === "performance") ringPerformanceEvents.push(timestamped);
+        const buf = ringBuffers.get(tabId);
+        if (buf) {
+          const now = Date.now();
+          buf.lastActiveMs = now;
+          const records: RingRecord[] = [];
+          for (const ev of events) {
+            const timestamped = { timestamp: now, event: ev };
+            let ch: RingChannel | null = null;
+            if (ev.kind === "console") {
+              buf.console.push(timestamped);
+              ch = "console";
+            } else if (ev.kind === "network" || ev.kind === "websocket" || ev.kind === "sse") {
+              buf.network.push(timestamped);
+              ch = "network";
+            } else if (ev.kind === "action") {
+              buf.interactions.push(timestamped);
+              ch = "interactions";
+            } else if (ev.kind === "performance") {
+              buf.performance.push(timestamped);
+              ch = "performance";
+            }
+            if (ch)
+              records.push({
+                t: now,
+                tab: tabId,
+                u: buf.url ?? null,
+                ti: buf.title ?? null,
+                ch,
+                ev,
+              });
+          }
+          appendRingRecords(records);
         }
       }
     },
@@ -480,6 +684,13 @@ export default defineBackground(() => {
       return;
     }
 
+    if (ringActive && ringTabId === tabId) {
+      // The tab the ring was recording closed — stop capture. Its buffered data
+      // is retained (and merged on export) until it ages out.
+      await stopActiveRecording();
+      ringReason = null;
+    }
+
     if (bgSession?.tabId !== tabId) return;
     // Session tab closed — treat the same as stop-session so data isn't lost.
     // shouldPreserveTab prevents the debugger bridge from discarding the session
@@ -494,30 +705,41 @@ export default defineBackground(() => {
       url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
     });
     recorderTabId = recorderTab.id ?? null;
+    await resumeRingAfterSession();
   });
 
   // Re-inject the replay recorder after a navigation so recording resumes on the
   // new document. rrweb emits a fresh full snapshot, and the appended NDJSON
   // stream stays continuous across the reload.
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (changeInfo.status !== "complete") return;
-    void backgroundReady.then(() => {
-      if (bgSession?.tabId !== tabId || bgSession.status !== "recording") return;
-      if (!bgSession.captureConfig.replay) return;
-      void injectReplayRecorderIntoTab(tabId);
-    });
+    if (changeInfo.status === "complete") {
+      void backgroundReady.then(() => {
+        if (bgSession?.tabId !== tabId || bgSession.status !== "recording") return;
+        if (!bgSession.captureConfig.replay) return;
+        void injectReplayRecorderIntoTab(tabId);
+      });
+    }
+
+    // Re-evaluate ring scope when the focused tab navigates. Navigating to a
+    // blocked or out-of-scope URL must stop capture immediately; navigating an
+    // in-scope tab to another in-scope URL keeps recording uninterrupted.
+    if (changeInfo.url !== undefined || changeInfo.status === "complete") {
+      void backgroundReady.then(async () => {
+        if (!ringEnabled) return;
+        try {
+          const tab = await chrome.tabs.get(tabId);
+          if (!tab.active) return;
+          await refocusRing(tabId, changeInfo.url ?? tab.url);
+        } catch {
+          // tab gone
+        }
+      });
+    }
   });
 
   chrome.tabs.onActivated.addListener(async ({ tabId }) => {
     await backgroundReady;
-    if (!ringActive || ringTabId === tabId) return;
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (!tab.url || tab.url.startsWith("chrome://") || tab.url.startsWith("about:")) return;
-      await rotateRingToTab(tabId);
-    } catch {
-      // tab may not exist yet
-    }
+    await refocusRing(tabId);
   });
 
   // Listeners are registered; now restore persisted state and open the gate so
@@ -560,6 +782,9 @@ async function handleMessage(message: BgMessage) {
 
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) return fail("No active tab found");
+
+      // An explicit session owns the single video stream — suspend the ring.
+      await pauseRingForSession();
 
       const session: Session = {
         id: crypto.randomUUID(),
@@ -670,6 +895,7 @@ async function handleMessage(message: BgMessage) {
         url: chrome.runtime.getURL(`/recorder.html?sessionId=${bgSession.id}`),
       });
       recorderTabId = recorderTab.id ?? null;
+      await resumeRingAfterSession();
       return ok(undefined);
     }
 
@@ -740,6 +966,7 @@ async function handleMessage(message: BgMessage) {
       bgSession = null;
       bgCounts = emptyCounts();
       await setSession(null);
+      await resumeRingAfterSession();
       return ok(undefined);
     }
 
@@ -827,18 +1054,42 @@ async function handleMessage(message: BgMessage) {
     case "get-ring-config":
       return ok(ringConfig);
 
-    case "save-ring-config":
+    case "save-ring-config": {
+      const prevEnabled = ringConfig.enabled;
       ringConfig = message.ringConfig;
       await saveRingConfig(ringConfig);
-      return ok(undefined);
-
-    case "toggle-ring": {
-      if (message.enabled && !ringActive) {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab?.id) await startRingOnTab(tab.id);
-      } else if (!message.enabled && ringActive) {
-        await stopRingOnTab();
+      if (ringConfig.enabled !== prevEnabled) {
+        await applyRingEnabled(ringConfig.enabled);
+      } else if (ringEnabled) {
+        // Scope or durations may have changed — re-evaluate the focused tab.
+        await refocusActiveTab();
       }
+      return ok(undefined);
+    }
+
+    case "toggle-ring":
+      await applyRingEnabled(message.enabled);
+      return ok(getRingStatus());
+
+    case "get-ring-tabs":
+      return ok(await listRingTabs());
+
+    case "pin-site": {
+      ringPins = await addRingPin(message.host);
+      await refocusActiveTab();
+      return ok(getRingStatus());
+    }
+
+    case "unpin-site": {
+      ringPins = await removeRingPin(message.host);
+      await refocusActiveTab();
+      return ok(getRingStatus());
+    }
+
+    case "save-ring-scope": {
+      ringConfig = { ...ringConfig, scope: message.scope };
+      await saveRingConfig(ringConfig);
+      if (ringEnabled) await refocusActiveTab();
       return ok(getRingStatus());
     }
 
@@ -1082,6 +1333,8 @@ async function sweepOrphanedOpfsFiles(): Promise<void> {
       ...(sess?.replayOpfsFilename ? [sess.replayOpfsFilename] : []),
       ...(sess?.eventsOpfsFilename ? [sess.eventsOpfsFilename] : []),
       ...(sess ? sess.domSnapshotKeys.map((k) => domSnapshotOpfsFilename(sess.id, k)) : []),
+      // Keep the ring buffer file while the feature is on (disabling deletes it).
+      ...(ringEnabled ? [ringBufferOpfsFilename()] : []),
     ]);
 
     const dir = await navigator.storage.getDirectory();
@@ -1105,34 +1358,161 @@ function pruneRingBuffer(): void {
   const now = Date.now();
   const dataCutoff = now - ringConfig.dataDurationSec * 1000;
   const videoCutoff = now - ringConfig.videoDurationSec * 1000;
-  ringConsoleEvents = ringConsoleEvents.filter((e) => e.timestamp >= dataCutoff);
-  ringNetworkEvents = ringNetworkEvents.filter((e) => e.timestamp >= dataCutoff);
-  ringInteractionEvents = ringInteractionEvents.filter((e) => e.timestamp >= dataCutoff);
-  ringPerformanceEvents = ringPerformanceEvents.filter((e) => e.timestamp >= dataCutoff);
+  for (const buf of ringBuffers.values()) {
+    buf.console = buf.console.filter((e) => e.timestamp >= dataCutoff);
+    buf.network = buf.network.filter((e) => e.timestamp >= dataCutoff);
+    buf.interactions = buf.interactions.filter((e) => e.timestamp >= dataCutoff);
+    buf.performance = buf.performance.filter((e) => e.timestamp >= dataCutoff);
+    // Drop a retained buffer once it has aged out entirely; keep the tab we're
+    // actively recording even while momentarily empty.
+    if (ringBufferSize(buf) === 0 && buf.tabId !== ringTabId) ringBuffers.delete(buf.tabId);
+  }
   ringVideoChunks = ringVideoChunks.filter((c) => c.timestamp >= videoCutoff);
 }
 
 function getRingStatus(): RingStatus {
-  const allEvents = [
-    ...ringConsoleEvents,
-    ...ringNetworkEvents,
-    ...ringInteractionEvents,
-    ...ringPerformanceEvents,
-  ];
-  const oldest = allEvents.length > 0 ? Math.min(...allEvents.map((e) => e.timestamp)) : null;
+  let consoleN = 0;
+  let networkN = 0;
+  let interactionsN = 0;
+  let oldest: number | null = null;
+  let retainedTabCount = 0;
+  for (const buf of ringBuffers.values()) {
+    consoleN += buf.console.length;
+    networkN += buf.network.length;
+    interactionsN += buf.interactions.length;
+    for (const arr of [buf.console, buf.network, buf.interactions, buf.performance]) {
+      for (const e of arr) if (oldest === null || e.timestamp < oldest) oldest = e.timestamp;
+    }
+    if (buf.tabId !== ringTabId && ringBufferSize(buf) > 0) retainedTabCount++;
+  }
   return {
-    active: ringActive,
-    tabId: ringTabId,
-    tabUrl: ringTabUrl,
-    tabTitle: ringTabTitle,
+    active: ringEnabled,
+    tabId: ringActive ? ringTabId : null,
+    tabUrl: ringActive ? ringTabUrl : undefined,
+    tabTitle: ringActive ? ringTabTitle : undefined,
     oldestEventMs: oldest,
-    eventCounts: {
-      console: ringConsoleEvents.length,
-      network: ringNetworkEvents.length,
-      interactions: ringInteractionEvents.length,
-    },
+    eventCounts: { console: consoleN, network: networkN, interactions: interactionsN },
     hasVideo: ringVideoChunks.length > 0,
+    reason: ringEnabled ? ringReason : null,
+    retainedTabCount,
   };
+}
+
+// Evaluate a URL against the current scope + pins.
+function isRingEligible(url: string | undefined): RingEligibility {
+  return evaluateRingScope(url, ringConfig.scope, ringPins);
+}
+
+// Trust signal: a blue dot on the toolbar icon while a tab is actively being
+// ring-recorded, visually distinct from the red "REC" of an explicit session.
+// Never overrides an active session's badge (sessions pause the ring anyway).
+function setRingBadge(on: boolean): void {
+  if (bgSession && bgSession.status === "recording") return;
+  if (on) {
+    chrome.action.setBadgeText({ text: "●" });
+    chrome.action.setBadgeBackgroundColor({ color: "#3b82f6" });
+  } else {
+    chrome.action.setBadgeText({ text: "" });
+  }
+}
+
+// Suspend the ring so an explicit recording session can own the video stream.
+async function pauseRingForSession(): Promise<void> {
+  ringPausedForSession = true;
+  if (ringActive) await stopActiveRecording();
+}
+
+// Resume the ring after an explicit session ends (if it was on). It re-attaches
+// once the user focuses an in-scope tab.
+async function resumeRingAfterSession(): Promise<void> {
+  if (!ringPausedForSession) return;
+  ringPausedForSession = false;
+  if (!ringEnabled) return;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.id) await refocusRing(tab.id, tab.url);
+  } catch {
+    // no focused tab
+  }
+}
+
+// Turn the ring feature on/off. Persists `enabled`, and when turning on with an
+// empty allowlist auto-pins the focused site so recording isn't dead on arrival.
+async function applyRingEnabled(enabled: boolean): Promise<void> {
+  ringEnabled = enabled;
+  ringConfig = { ...ringConfig, enabled };
+  await saveRingConfig(ringConfig);
+
+  if (!enabled) {
+    await stopActiveRecording();
+    ringBuffers.clear();
+    await deleteRingBufferFile();
+    ringReason = null;
+    return;
+  }
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return;
+  const elig = isRingEligible(tab.url);
+  if (elig.reason === "empty-allowlist") {
+    const host = hostFromUrl(tab.url);
+    if (host) ringPins = await addRingPin(host);
+  }
+  await refocusRing(tab.id, tab.url);
+}
+
+// Re-evaluate whichever tab is currently focused (after a scope/pin change).
+async function refocusActiveTab(): Promise<void> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (tab?.id) await refocusRing(tab.id, tab.url);
+}
+
+// Central focus-follows logic: recording tracks the focused tab, gated by scope.
+// Called on tab activation, focused-tab navigation, and scope/pin changes.
+async function refocusRing(tabId: number, url?: string): Promise<void> {
+  if (!ringEnabled || ringPausedForSession) return;
+  let tabUrl = url;
+  if (tabUrl === undefined) {
+    try {
+      tabUrl = (await chrome.tabs.get(tabId)).url;
+    } catch {
+      return; // tab gone
+    }
+  }
+
+  const elig = isRingEligible(tabUrl);
+  ringReason = elig.reason;
+
+  if (elig.recordable) {
+    if (ringTabId !== tabId) await rotateRingToTab(tabId);
+  } else if (ringActive) {
+    // Focused (or navigated to) an ineligible page — stop capturing.
+    await stopActiveRecording();
+  }
+}
+
+// Build the popup's tab picker: every tab in the focused window with its
+// eligibility, pin state, and whether it's the one recording now.
+async function listRingTabs(): Promise<RingTabInfo[]> {
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  const infos: RingTabInfo[] = [];
+  for (const t of tabs) {
+    if (t.id === undefined) continue;
+    const elig = isRingEligible(t.url);
+    const host = hostFromUrl(t.url);
+    infos.push({
+      tabId: t.id,
+      url: t.url,
+      title: t.title,
+      host,
+      recordable: elig.recordable,
+      reason: elig.reason,
+      pinned: host !== null && ringPins.includes(host),
+      isRecording: ringActive && ringTabId === t.id,
+      retained: false,
+    });
+  }
+  return infos;
 }
 
 async function startRingVideoCapture(tabId: number): Promise<void> {
@@ -1187,6 +1567,9 @@ async function startRingOnTab(tabId: number): Promise<void> {
     ringTabUrl = tab.url;
     ringTabTitle = tab.title;
     ringActive = true;
+    // Reuse this tab's retained buffer if it still has recent data, else start
+    // a fresh one — so returning to a tab picks up its history.
+    ensureRingBuffer(tabId, tab.url, tab.title);
 
     // The ring honors the performance beta toggle so always-on capture matches
     // what an explicit session would collect.
@@ -1200,6 +1583,7 @@ async function startRingOnTab(tabId: number): Promise<void> {
     if (ringConfig.videoDurationSec > 0) {
       await startRingVideoCapture(tabId);
     }
+    setRingBadge(true);
   } catch (err) {
     reportNonFatalError("Failed to start ring on tab", err);
     ringActive = false;
@@ -1207,41 +1591,30 @@ async function startRingOnTab(tabId: number): Promise<void> {
   }
 }
 
-async function stopRingOnTab(): Promise<void> {
+// Stop actively recording (video + debugger session). The tab's buffered data is
+// RETAINED for the merged export; only video is dropped (it follows focus only).
+// Does not touch `ringEnabled` — the feature stays on, just idle.
+async function stopActiveRecording(): Promise<void> {
+  const stoppingTabId = ringTabId;
   ringActive = false;
   await stopRingVideoCapture();
   if (ringDebuggerSessionId) {
     await debuggerBridge.discardSession(ringDebuggerSessionId).catch(() => {});
     ringDebuggerSessionId = null;
   }
+  if (stoppingTabId !== null) {
+    const buf = ringBuffers.get(stoppingTabId);
+    if (buf) buf.lastActiveMs = Date.now();
+  }
   ringTabId = null;
   ringTabUrl = undefined;
   ringTabTitle = undefined;
-  ringConsoleEvents = [];
-  ringNetworkEvents = [];
-  ringInteractionEvents = [];
-  ringPerformanceEvents = [];
   ringVideoChunks = [];
+  setRingBadge(false);
 }
 
 async function rotateRingToTab(newTabId: number): Promise<void> {
-  const wasActive = ringActive;
-  if (wasActive) {
-    await stopRingVideoCapture();
-    if (ringDebuggerSessionId) {
-      await debuggerBridge.discardSession(ringDebuggerSessionId).catch(() => {});
-      ringDebuggerSessionId = null;
-    }
-    ringTabId = null;
-    ringTabUrl = undefined;
-    ringTabTitle = undefined;
-    ringConsoleEvents = [];
-    ringNetworkEvents = [];
-    ringInteractionEvents = [];
-    ringPerformanceEvents = [];
-    ringVideoChunks = [];
-    ringActive = false;
-  }
+  if (ringActive) await stopActiveRecording();
   await startRingOnTab(newTabId);
 }
 
@@ -1262,15 +1635,46 @@ async function snapshotRingAndExport(): Promise<void> {
     await writeToOpfs(videoOpfsFilename, combined);
   }
 
+  // Merge every retained tab's events into one timeline. The report already
+  // sorts by each event's own timestamp, so concatenation is enough for time
+  // ordering. When more than one tab contributed, tag each event with its source
+  // so an interleaved repro reads coherently; a single-tab export stays unlabeled.
+  const buffers = [...ringBuffers.values()].filter((b) => ringBufferSize(b) > 0);
+  const multiTab = buffers.length > 1;
+  const label = (buf: RingTabBuffer, event: unknown): unknown => {
+    if (!multiTab || typeof event !== "object" || event === null) return event;
+    return {
+      ...(event as Record<string, unknown>),
+      __ringSource: { tabId: buf.tabId, title: buf.title, host: buf.host },
+    };
+  };
+
+  const consoleEvents: unknown[] = [];
+  const networkEvents: unknown[] = [];
+  const interactionEvents: unknown[] = [];
+  const performanceEvents: unknown[] = [];
+  for (const buf of buffers) {
+    for (const e of buf.console) consoleEvents.push(label(buf, e.event));
+    for (const e of buf.network) networkEvents.push(label(buf, e.event));
+    for (const e of buf.interactions) interactionEvents.push(label(buf, e.event));
+    for (const e of buf.performance) performanceEvents.push(label(buf, e.event));
+  }
+
+  // Primary tab for the report title: the one recording now, else the most
+  // recently active retained tab (the ineligible-focus fallback).
+  const primary =
+    (ringTabId !== null ? ringBuffers.get(ringTabId) : undefined) ??
+    [...buffers].sort((a, b) => b.lastActiveMs - a.lastActiveMs)[0];
+
   const snapshot: RingSnapshot = {
     id: crypto.randomUUID(),
-    tabUrl: ringTabUrl,
-    tabTitle: ringTabTitle,
+    tabUrl: primary?.url ?? ringTabUrl,
+    tabTitle: primary?.title ?? ringTabTitle,
     startedAt: Date.now(),
-    console: ringConsoleEvents.map((e) => e.event),
-    network: ringNetworkEvents.map((e) => e.event),
-    interactions: ringInteractionEvents.map((e) => e.event),
-    performance: ringPerformanceEvents.map((e) => e.event),
+    console: consoleEvents,
+    network: networkEvents,
+    interactions: interactionEvents,
+    performance: performanceEvents,
     videoOpfsFilename,
   };
 

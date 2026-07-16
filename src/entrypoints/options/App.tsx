@@ -23,6 +23,7 @@ import {
   DEFAULT_VIDEO_CONFIG,
   type NetworkFilterConfig,
   type RingConfig,
+  type RingScopeMode,
   type VideoConfig,
   type VideoFormat,
 } from "@/lib/types";
@@ -66,6 +67,8 @@ export default function App() {
   const [ringConfig, setRingConfig] = useState<RingConfig>(DEFAULT_RING_CONFIG);
   const [exclusionText, setExclusionText] = useState("");
   const [customHeadersText, setCustomHeadersText] = useState("");
+  const [ringAllowText, setRingAllowText] = useState("");
+  const [ringBlockText, setRingBlockText] = useState("");
   const [isDirty, setIsDirty] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +109,11 @@ export default function App() {
       })
       .catch(() => {});
     sendToBackground<RingConfig>({ type: "get-ring-config" })
-      .then((rc) => setRingConfig(rc))
+      .then((rc) => {
+        setRingConfig(rc);
+        setRingAllowText(rc.scope.allow.join("\n"));
+        setRingBlockText(rc.scope.block.join("\n"));
+      })
       .catch(() => {});
     sendToBackground<ExtensionError[]>({ type: "get-error-log" })
       .then((log) => setErrorLog(log))
@@ -226,7 +233,20 @@ export default function App() {
         networkFilter: finalFilter,
         videoConfig,
       });
-      await sendToBackground({ type: "save-ring-config", ringConfig });
+      const parseLines = (text: string) =>
+        text
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      const finalRing: RingConfig = {
+        ...ringConfig,
+        scope: {
+          ...ringConfig.scope,
+          allow: parseLines(ringAllowText),
+          block: parseLines(ringBlockText),
+        },
+      };
+      await sendToBackground({ type: "save-ring-config", ringConfig: finalRing });
       setSaved(true);
       setIsDirty(false);
       setTimeout(() => setSaved(false), 2000);
@@ -809,6 +829,76 @@ export default function App() {
                   setIsDirty(true);
                 }}
               />
+            </div>
+
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="opt-ring-scope-mode" className="font-medium">
+                    Which sites to record
+                  </Label>
+                  <InfoTooltip text="Allowlist records only the domains you list (safest — nothing is recorded unless opted in). Blocklist records everything except the domains you list. All records every site. A blocked domain is never recorded in any mode. Browser pages are never recorded." />
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  A blocked domain is never recorded, in any mode
+                </p>
+              </div>
+              <select
+                id="opt-ring-scope-mode"
+                className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={ringConfig.scope.mode}
+                onChange={(e) => {
+                  const mode = e.target.value as RingScopeMode;
+                  setRingConfig((r) => ({ ...r, scope: { ...r.scope, mode } }));
+                  setIsDirty(true);
+                }}
+              >
+                <option value="allowlist">Allowlist (only these)</option>
+                <option value="blocklist">Blocklist (all but these)</option>
+                <option value="all">All sites</option>
+              </select>
+            </div>
+
+            {ringConfig.scope.mode === "allowlist" && (
+              <div>
+                <Label htmlFor="opt-ring-allow" className="font-medium">
+                  Allowed domains
+                </Label>
+                <Textarea
+                  id="opt-ring-allow"
+                  placeholder={"app.example.com\n*.staging.example.com"}
+                  value={ringAllowText}
+                  onChange={(e) => {
+                    setRingAllowText(e.target.value);
+                    setIsDirty(true);
+                  }}
+                  rows={3}
+                  className="font-mono text-xs mt-1"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  One hostname pattern per line. <code>*</code> is a wildcard.
+                </p>
+              </div>
+            )}
+
+            <div>
+              <Label htmlFor="opt-ring-block" className="font-medium">
+                Blocked domains
+              </Label>
+              <Textarea
+                id="opt-ring-block"
+                placeholder={"mail.example.com\n*.bank.com"}
+                value={ringBlockText}
+                onChange={(e) => {
+                  setRingBlockText(e.target.value);
+                  setIsDirty(true);
+                }}
+                rows={3}
+                className="font-mono text-xs mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Never recorded, even if pinned. One pattern per line.
+              </p>
             </div>
           </div>
         </section>

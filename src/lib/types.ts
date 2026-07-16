@@ -1,3 +1,8 @@
+import { DEFAULT_RING_SCOPE, type RingScopeConfig, type RingScopeReason } from "./ring/scope";
+
+export type { RingScopeConfig, RingScopeMode, RingScopeReason } from "./ring/scope";
+export { DEFAULT_RING_SCOPE } from "./ring/scope";
+
 export interface CaptureConfig {
   console: boolean;
   network: boolean;
@@ -133,12 +138,16 @@ export interface RingConfig {
   enabled: boolean;
   dataDurationSec: number;
   videoDurationSec: number;
+  // Domain rules governing which sites the ring may record. See
+  // src/lib/ring/scope.ts.
+  scope: RingScopeConfig;
 }
 
 export const DEFAULT_RING_CONFIG: RingConfig = {
   enabled: false,
   dataDurationSec: 300,
   videoDurationSec: 300,
+  scope: DEFAULT_RING_SCOPE,
 };
 
 export interface RingStatus {
@@ -149,6 +158,25 @@ export interface RingStatus {
   oldestEventMs: number | null;
   eventCounts: { console: number; network: number; interactions: number };
   hasVideo: boolean;
+  // Why the focused tab is (not) being recorded — drives the popup's
+  // plain-language explanation. Null when the ring is off.
+  reason: RingScopeReason | null;
+  // Number of switched-away tabs whose data is still retained in the window.
+  retainedTabCount: number;
+}
+
+// One row of the popup's tab picker. `recordable`/`reason` come from
+// evaluateRingScope; `isRecording` marks the single active tab.
+export interface RingTabInfo {
+  tabId: number;
+  url: string | undefined;
+  title: string | undefined;
+  host: string | null;
+  recordable: boolean;
+  reason: RingScopeReason;
+  pinned: boolean;
+  isRecording: boolean;
+  retained: boolean;
 }
 
 export interface RingSnapshot {
@@ -187,6 +215,10 @@ export type BgMessage =
   | { type: "export-ring" }
   | { type: "save-ring-config"; ringConfig: RingConfig }
   | { type: "get-ring-config" }
+  | { type: "get-ring-tabs" }
+  | { type: "pin-site"; host: string }
+  | { type: "unpin-site"; host: string }
+  | { type: "save-ring-scope"; scope: RingScopeConfig }
   | { type: "get-error-log" }
   | { type: "clear-error-log" };
 
