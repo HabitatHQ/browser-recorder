@@ -789,25 +789,6 @@ export default function App() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="flex items-center gap-1.5">
-                  <Label htmlFor="opt-replay" className="font-medium">
-                    Session replay (rrweb)
-                  </Label>
-                  <InfoTooltip text="Records the page DOM with rrweb so the session can be replayed as a scrubbable reconstruction (not a video). Events stream to disk as they happen, so reloads and navigations are captured continuously. Adds replay.html + replay.json to the export. Experimental: cross-origin styles/canvas may render imperfectly." />
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Capture a DOM replay alongside the report · experimental
-                </p>
-              </div>
-              <Switch
-                id="opt-replay"
-                checked={captureConfig.replay}
-                onChange={() => toggleCapture("replay")}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-1.5">
                   <Label htmlFor="opt-performance" className="font-medium">
                     Performance metrics (beta)
                   </Label>
