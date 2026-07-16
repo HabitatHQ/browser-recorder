@@ -2,3 +2,7 @@ packages:
   - '.'
   - 'packages/*'
   - 'cli'
+allowBuilds:
+  '@biomejs/biome': true
+  esbuild: true
+  spawn-sync: true
