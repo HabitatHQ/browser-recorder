@@ -26,7 +26,7 @@ import {
   type VideoConfig,
   type VideoFormat,
 } from "@/lib/types";
-import { Bug, Copy } from "lucide-react";
+import { Bug, Copy, HardDrive } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 // Maps each explicit format to its probe MIME type
@@ -73,6 +73,14 @@ export default function App() {
   const [diagnostics, setDiagnostics] = useState<Diagnostics | null>(null);
   const [copied, setCopied] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
+  // Persistent-storage status. `persist()` is one-way — there is no API to
+  // revoke persistence — so this is a request button plus a status readout, not
+  // a reversible toggle. "unknown" until the initial persisted() check resolves.
+  const [persistStatus, setPersistStatus] = useState<"unknown" | "persisted" | "transient">(
+    "unknown"
+  );
+  const [persistBusy, setPersistBusy] = useState(false);
+  const [persistError, setPersistError] = useState<string | null>(null);
 
   // Formats supported by MediaRecorder in this browser context
   const supportedFormats = useMemo<VideoFormat[]>(() => {
@@ -107,6 +115,32 @@ export default function App() {
       .then((d) => setDiagnostics(d))
       .catch(() => {});
   }, []);
+
+  // Reflect the current persistence grant on load. Chrome may auto-grant it to
+  // installed extensions, so the button often shows "already granted".
+  useEffect(() => {
+    navigator.storage
+      ?.persisted?.()
+      .then((granted) => setPersistStatus(granted ? "persisted" : "transient"))
+      .catch(() => {});
+  }, []);
+
+  const requestPersistentStorage = async () => {
+    setPersistError(null);
+    if (!navigator.storage?.persist) {
+      setPersistError("Persistent storage is not available in this browser.");
+      return;
+    }
+    setPersistBusy(true);
+    try {
+      const granted = await navigator.storage.persist();
+      setPersistStatus(granted ? "persisted" : "transient");
+    } catch (e) {
+      setPersistError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPersistBusy(false);
+    }
+  };
 
   const buildReportData = (): ReportData => ({
     env: {
@@ -842,6 +876,39 @@ export default function App() {
                 onChange={() => toggleCapture("replayStripAutofocus")}
               />
             </div>
+          </div>
+        </section>
+
+        <section className="mb-8">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+            Storage
+          </h2>
+          <Separator className="mb-4" />
+
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">
+              Recordings are held in the browser's Origin Private File System, which the browser may
+              evict under storage pressure. Requesting persistent storage asks the browser not to
+              evict this extension's data. This is a one-way request — there is no way to
+              un-persist, and the browser may grant or deny it at its discretion.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button onClick={requestPersistentStorage} disabled={persistBusy}>
+                <HardDrive className="h-4 w-4" />
+                {persistBusy ? "Requesting…" : "Request persistent storage"}
+              </Button>
+              {persistStatus === "persisted" && (
+                <span className="text-sm text-green-600 dark:text-green-400">
+                  Granted — data is persistent
+                </span>
+              )}
+              {persistStatus === "transient" && (
+                <span className="text-sm text-muted-foreground">
+                  Not persistent — storage is best-effort
+                </span>
+              )}
+            </div>
+            {persistError && <p className="text-xs text-destructive">{persistError}</p>}
           </div>
         </section>
 
