@@ -87,6 +87,13 @@ The report tab is also a review screen. Before exporting you can:
 - **Redact or drop network data.** Open **Network privacy** to see requests with likely secrets flagged (JWTs, API keys, emails, credentials — including in URL query params). Redaction is **opt-in**: tick a field to replace its secrets with `[REDACTED]`, or leave it to keep the value as-is (intentional values and false positives are never touched). You can also **drop** any request entirely — its body and headers are removed, but the report still records that the request happened.
 - **Choose what to include.** **Include in export** lists each artifact with its size and a running total, so you can drop large pieces (e.g. video) before the ZIP balloons.
 
+### Replaying a request
+
+Each row in **Network privacy** also has **replay** and **curl** buttons:
+
+- **Replay** resends the request against the still-open recorded page. Edit the method, URL, headers, or body, click **Send**, and the response renders with its status and duration — a `(was NNN)` badge flags a status that changed from the original capture, and the original response body is shown alongside for comparison. Because it sends from the live session, the real cookies authenticate it, so same-origin API calls work as-is; cross-origin targets are subject to the page's CORS policy and surface an inline error. Replay results are ephemeral — they are never written into the exported ZIP.
+- **curl** copies the request as a `curl` command (the same button also appears on every network row in the exported `report.html`). Since captured auth headers are stripped and long bodies truncated, it's a scaffold you complete, not a turnkey command.
+
 ### Exporting
 
 Add a title and notes, finish your review, then click **Export ZIP**.
@@ -95,7 +102,7 @@ Add a title and notes, finish your review, then click **Export ZIP**.
 
 A self-contained `.zip` is saved locally — named `browser-recording-{title}-{date}.zip` — containing:
 
-- `report.html` — **start here.** A self-contained viewer (open in any browser, no server): every channel merged into one filterable timeline, an error-first **Problems** panel, and links to screenshots/DOM/replay.
+- `report.html` — **start here.** A self-contained viewer (open in any browser, no server): every channel merged into one filterable timeline, an error-first **Problems** panel, and links to screenshots/DOM/session replay.
 - `report.md` — the same summary as Markdown, for humans and agents
 - `events.json` — all channels merged into one timestamp-sorted timeline; each entry carries a `seq`, an offset from session start, and a link to the interaction that likely caused it
 - `console.json` — console entries
