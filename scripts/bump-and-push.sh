@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# Bumps the version, builds both targets, pushes, and creates a GitHub release.
-# Usage: ./scripts/ship.sh <patch|minor|major|x.y.z> [--draft] [--notes "release notes"]
+# Bumps the version, tags it, and pushes the branch + tag.
+#
+# The pushed v* tag triggers the Release workflow
+# (.github/workflows/release.yml), which builds both browser targets and
+# creates the GitHub release with the zips attached. To build + release from
+# your machine instead, run scripts/release.sh directly. Chrome Web Store
+# upload stays manual (scripts/publish-chrome.sh).
+#
+# Usage: ./scripts/bump-and-push.sh <patch|minor|major|x.y.z>
 
 set -euo pipefail
 
@@ -9,14 +16,12 @@ cd "$REPO_DIR"
 
 # ── Args ──────────────────────────────────────────────────────────────────────
 
-if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <patch|minor|major|x.y.z> [--draft] [--notes \"release notes\"]" >&2
+if [[ $# -ne 1 ]]; then
+  echo "Usage: $0 <patch|minor|major|x.y.z>" >&2
   exit 1
 fi
 
 BUMP="$1"
-shift
-RELEASE_ARGS=("$@")
 
 # ── Require clean tree ────────────────────────────────────────────────────────
 
@@ -38,6 +43,5 @@ echo "→ pushing branch and tag ${TAG}…"
 git push
 git push origin "$TAG"
 
-# ── Build + release ───────────────────────────────────────────────────────────
-
-./scripts/release.sh "${RELEASE_ARGS[@]+"${RELEASE_ARGS[@]}"}"
+echo "✓ pushed ${TAG} — the Release workflow (.github/workflows/release.yml)"
+echo "  will build both targets and create the GitHub release."

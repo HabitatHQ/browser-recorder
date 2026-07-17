@@ -89,14 +89,14 @@ pnpm icons
 
 ## Releasing
 
-`./scripts/ship.sh <patch|minor> [--draft] [--notes "..."]` runs the full release: bump version, build both zips, create a GitHub release, and attach the artifacts. The script composes:
+`./scripts/bump-and-push.sh <patch|minor|major|x.y.z>` bumps the version, tags it, and pushes the branch + tag. The pushed `v*` tag triggers the [Release workflow](.github/workflows/release.yml), which builds both zips and creates the GitHub release with them attached. It composes:
 
-- [`scripts/bump-version.sh`](scripts/bump-version.sh) — version bump
-- [`scripts/build-cws.sh`](scripts/build-cws.sh) — CWS-specific Chrome build (separate from the regular Chrome zip so the public key can't be confused with the release-zip key)
-- [`scripts/release.sh`](scripts/release.sh) — creates the GitHub release and uploads the zips
+- [`scripts/bump-version.sh`](scripts/bump-version.sh) — version bump, commit, and tag
+
+To build and release from your machine instead of via CI (or to re-upload assets to an existing release), run [`scripts/release.sh`](scripts/release.sh) directly — it builds both targets and creates/updates the GitHub release. The Release workflow runs the same build + release on a tag push.
 
 For Chrome Web Store publishing details, see [PUBLISH.md](PUBLISH.md).
-For Firefox/AMO, there's no scripted publish — `pnpm zip:firefox` produces the zip, and `scripts/release.sh` attaches it to the GitHub release. Upload to AMO manually.
+For Firefox/AMO, there's no scripted publish — `pnpm zip:firefox` produces the zip, and `scripts/release.sh` (or the Release workflow) attaches it to the GitHub release. Upload to AMO manually.
 
 ## Useful env files
 
