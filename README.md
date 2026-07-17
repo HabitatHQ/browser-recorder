@@ -13,7 +13,7 @@ No server, no account, no cloud.
 A single `.zip` per capture, named `browser-recording-{title}-{date}.zip`, containing a self-contained `report.html` viewer you can open in any browser. It includes:
 
 - **Console** — `log`/`warn`/`error`/`info`/`debug` from page JS, plus uncaught errors
-- **Network** — every XHR/fetch request and response (headers + body)
+- **Network** — every XHR/fetch request and response (headers + body), each copyable as a `curl` scaffold
 - **WebSocket & SSE** — lifecycle and message frames (payloads truncated to 4 kB)
 - **Interactions** — clicks, inputs, navigations with element metadata
 - **DOM snapshots** — serialised HTML with inlined same-origin styles
@@ -22,6 +22,10 @@ A single `.zip` per capture, named `browser-recording-{title}-{date}.zip`, conta
 - **Ring buffer** — always-on background capture so you can export what *just happened* even if you didn't start a session
 
 Before exporting, the report tab also lets you redact or drop sensitive network entries and uncheck large artifacts (e.g. video) to keep the zip small.
+
+### Request replay
+
+From the network review you can **replay** any captured request against the still-open page — edit the method, URL, headers, or body and resend, then compare the response (and status) against what was originally captured. Replays use the live session's cookies, so same-origin API calls just work; cross-origin targets are subject to the page's CORS policy. Replay results are ephemeral — they're never written into the exported zip. Every request also has a **copy-as-curl** button (in both the live review and the exported report); since captured auth headers are stripped and long bodies truncated, the curl command is a scaffold you complete, not a turnkey command.
 
 ## Install
 

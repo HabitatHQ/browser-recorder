@@ -1,6 +1,6 @@
 # Request replay
 
-Status: planned · Target: incremental, ship tier by tier · Owner: —
+Status: implemented (M1–M3), pending live E2E verification · Owner: —
 
 ## 1. Motivation
 
@@ -113,6 +113,10 @@ Reuse a text diff (rep+ renders a line diff; we can start with a simple status/h
   entirely — there is nothing new to scrub because nothing new is retained.
 - Copy-as-curl operates on the **already-redacted/edited** captured entry in the export flow, so it
   can never leak more than the report itself already would.
+- **Known edge:** after a session stops, `resumeRingAfterSession()` may re-arm the always-on ring on
+  the recorded tab, so a replayed request can be captured into a *later* ring export (it passes
+  through the ring's own capture-time redaction). It never enters the current report's zip. Suppress
+  only if this proves surprising.
 
 ## 8. Non-goals
 
@@ -125,7 +129,7 @@ Reuse a text diff (rep+ renders a line diff; we can start with a simple status/h
 
 ## 9. Milestones (TDD; atomic commits, each green on its own)
 
-**M1 — Copy-as-curl scaffold (tier 1).**
+**M1 — Copy-as-curl scaffold (tier 1). — DONE (`86e721e`)**
 - `packages/core/src/curl.ts`: pure `toCurl(ev: DebuggerNetworkEvent): string` (and maybe
   `toFetch`). Handles method, headers, body quoting/escaping, truncation marker note. Export from
   `packages/core/src/index.ts`. Red/green unit tests in `packages/core` (quoting, no-body GET,
@@ -137,13 +141,13 @@ Reuse a text diff (rep+ renders a line diff; we can start with a simple status/h
   The report viewer is a raw self-contained string with no imports, so the function body is inlined
   there (kept in sync with the core version; covered by `report-html.test.ts`).
 
-**M2 — Replay primitive (tier 2 plumbing).**
+**M2 — Replay primitive (tier 2 plumbing). — DONE (`21faf69`)**
 - Pure request-builder: normalize a (possibly user-edited) request into `fetch` args; unit-tested.
 - MAIN-world replay function + background `replayRequest` message handler + `sendToBackground`
   wrapper. `ReplayResult` type in `packages/core`. Tests around request-building and result-shaping
   (mock `executeScript`).
 
-**M3 — Replay UI (tier 2 UX).**
+**M3 — Replay UI (tier 2 UX). — DONE (`1189626`)**
 - A replay panel/drawer: prefilled from the selected captured request, editable
   URL/method/headers/body, "Send", response view, and diff vs captured original. Ephemeral state
   only. Same-origin happy path + CORS-limit messaging + error states.
