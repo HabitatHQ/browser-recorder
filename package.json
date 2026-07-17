@@ -5,11 +5,11 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/npalladium/chrome-recorder.git"
+    "url": "git+https://github.com/HabitatHQ/browser-recorder.git"
   },
-  "homepage": "https://github.com/npalladium/chrome-recorder",
+  "homepage": "https://github.com/HabitatHQ/browser-recorder",
   "bugs": {
-    "url": "https://github.com/npalladium/chrome-recorder/issues"
+    "url": "https://github.com/HabitatHQ/browser-recorder/issues"
   },
   "scripts": {
     "dev": "wxt --port 5555",
