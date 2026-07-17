@@ -1162,6 +1162,7 @@ export default function App() {
                 events={debuggerEvents.network as CoreNetworkEvent[]}
                 edits={networkEdits}
                 onChange={setNetworkEdits}
+                replayTabId={session?.tabId}
               />
               <IncludeOptions
                 rows={includeRows}

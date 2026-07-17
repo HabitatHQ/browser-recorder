@@ -1,3 +1,4 @@
+import { ReplayPanel } from "@/components/replay-panel";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
@@ -44,13 +45,18 @@ export function NetworkPrivacyReview({
   events,
   edits,
   onChange,
+  replayTabId,
 }: {
   events: DebuggerNetworkEvent[];
   edits: Record<number, NetworkEdit>;
   onChange: (edits: Record<number, NetworkEdit>) => void;
+  /** Live tab to replay against. When absent or ≤0 (e.g. ring export), no replay is offered. */
+  replayTabId?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [replayIdx, setReplayIdx] = useState<number | null>(null);
+  const canReplay = replayTabId !== undefined && replayTabId > 0;
 
   const copyCurl = (i: number, ev: DebuggerNetworkEvent) => {
     navigator.clipboard.writeText(toCurl(ev)).then(() => {
@@ -203,6 +209,21 @@ export function NetworkPrivacyReview({
                       )}
                       <span className="text-[10px]">{copiedIdx === i ? "copied" : "curl"}</span>
                     </button>
+                    {canReplay && !dropped && (
+                      <button
+                        type="button"
+                        onClick={() => setReplayIdx((cur) => (cur === i ? null : i))}
+                        title="Replay this request against the live page (uses the session's cookies)"
+                        className={cn(
+                          "shrink-0 rounded px-1 text-[10px] hover:bg-muted-foreground/15",
+                          replayIdx === i
+                            ? "text-primary"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        replay
+                      </button>
+                    )}
                   </div>
                   {findings && !dropped && (
                     <div className="mt-1 flex flex-col gap-0.5 pl-6">
@@ -230,6 +251,9 @@ export function NetworkPrivacyReview({
                         );
                       })}
                     </div>
+                  )}
+                  {canReplay && replayIdx === i && !dropped && (
+                    <ReplayPanel event={ev} tabId={replayTabId as number} />
                   )}
                 </div>
               );
