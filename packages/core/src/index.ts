@@ -29,3 +29,4 @@ export { REDACTED, scanText, redactMatches, scanNetworkEvents } from "./redact.j
 export type { NetworkEdit, NetworkEditResult } from "./network-edit.js";
 export { applyNetworkEdits } from "./network-edit.js";
 export { buildReproSteps } from "./repro.js";
+export { toCurl } from "./curl.js";

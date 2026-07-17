@@ -86,6 +86,8 @@ export function buildReportHtml(input: ReportHtmlInput): string {
   .b-websocket { background: #1f3a34; color: #7fd1bd; }
   .b-sse { background: #3a2f1f; color: #d8b67f; }
   .b-performance { background: #1f3326; color: #8fd99f; }
+  .curl-btn { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #8fb6f0; background: #1b2536; border: 1px solid #2a3a54; border-radius: 4px; padding: 0 6px; margin-left: 6px; cursor: pointer; vertical-align: 1px; }
+  .curl-btn:hover { background: #243044; }
   .src { display: inline-block; font-size: 10px; color: #8fb6f0; background: #1b2536; border-radius: 4px; padding: 0 5px; margin-right: 6px; vertical-align: 1px; }
   .scores { display: flex; flex-wrap: wrap; gap: 10px; }
   .score { background: #1b1e26; border: 1px solid #2a2e3a; border-radius: 8px; padding: 8px 12px; min-width: 88px; }
@@ -188,6 +190,27 @@ export function buildReportHtml(input: ReportHtmlInput): string {
   if (R.device) meta.push(esc(R.device.os) + " · " + R.device.viewport.width + "×" + R.device.viewport.height);
   $("meta").innerHTML = meta.join(" &nbsp;·&nbsp; ");
 
+  // curl scaffold for a network entry. Twin of packages/core/src/curl.ts (the
+  // report viewer is a self-contained string with no imports, so it is inlined
+  // here). Captured entries have auth headers stripped and bodies truncated, so
+  // this is a starting point, not a turnkey command.
+  function shQuote(v) { return "'" + String(v).replace(/'/g, "'\\\\''") + "'"; }
+  function toCurl(e) {
+    var method = (e.method || "GET").toUpperCase();
+    var hasBody = typeof e.requestBody === "string" && e.requestBody.length > 0;
+    var parts = ["curl " + shQuote(e.url)];
+    if (method !== "GET" || hasBody) parts.push("-X " + method);
+    if (e.requestHeaders) {
+      for (var name in e.requestHeaders) {
+        if (Object.prototype.hasOwnProperty.call(e.requestHeaders, name)) {
+          parts.push("-H " + shQuote(name + ": " + e.requestHeaders[name]));
+        }
+      }
+    }
+    if (hasBody) parts.push("--data-raw " + shQuote(e.requestBody));
+    return parts.join(" \\\\\\n  ");
+  }
+
   // Per-kind one-line summary + optional detail block.
   function netDetail(e) {
     var d = "";
@@ -208,7 +231,8 @@ export function buildReportHtml(input: ReportHtmlInput): string {
       var failed = e.status != null && e.status >= 400;
       html = '<span class="mono">' + (e.dropped ? '<span class="fail">[dropped] </span>' : "")
         + '<b class="' + (failed ? "fail" : "") + '">' + (e.status == null ? "—" : e.status) + '</b> '
-        + esc(e.method) + ' ' + esc(e.url) + (e.duration != null ? ' · ' + e.duration + 'ms' : '') + '</span>';
+        + esc(e.method) + ' ' + esc(e.url) + (e.duration != null ? ' · ' + e.duration + 'ms' : '') + '</span>'
+        + (e.dropped ? "" : ' <button type="button" class="curl-btn" title="Copy as curl (scaffold — auth headers and long bodies are omitted)">curl</button>');
       text = e.method + " " + e.url + " " + (e.status || "");
       if (!e.dropped) detail = netDetail(e);
     } else if (k === "action") {
@@ -257,6 +281,7 @@ export function buildReportHtml(input: ReportHtmlInput): string {
       '<div class="badge b-' + entry.kind + '">' + (entry.kind === "action" ? "interact" : entry.kind === "performance" ? "perf" : entry.kind) + '</div>' +
       '<div class="summary"><div class="main">' + src + s.html + from + '</div>' +
       (s.sub ? '<div class="sub mono">' + s.sub + '</div>' : "") + detail + '</div>';
+    if (entry.kind === "network" && !entry.event.dropped) row.__curl = toCurl(entry.event);
     tl.appendChild(row);
     return row;
   });
@@ -275,6 +300,18 @@ export function buildReportHtml(input: ReportHtmlInput): string {
     });
   }
   $("controls").addEventListener("input", applyFilters);
+
+  // Copy-as-curl: the command string is stashed on each network row as __curl.
+  tl.addEventListener("click", function (ev) {
+    var btn = ev.target.closest(".curl-btn");
+    if (!btn) return;
+    var row = btn.closest(".row");
+    if (!row || !row.__curl || !navigator.clipboard) return;
+    navigator.clipboard.writeText(row.__curl).then(function () {
+      btn.textContent = "copied";
+      setTimeout(function () { btn.textContent = "curl"; }, 1500);
+    });
+  });
 
   // Problems panel
   var problems = [];

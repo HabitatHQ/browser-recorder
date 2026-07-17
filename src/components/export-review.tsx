@@ -5,8 +5,9 @@ import {
   type NetworkEdit,
   type NetworkField,
   scanNetworkEvents,
+  toCurl,
 } from "@browser-recorder/core";
-import { ChevronDown, ChevronRight, ShieldAlert } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Copy, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 
 export function formatBytes(bytes: number): string {
@@ -49,6 +50,14 @@ export function NetworkPrivacyReview({
   onChange: (edits: Record<number, NetworkEdit>) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+
+  const copyCurl = (i: number, ev: DebuggerNetworkEvent) => {
+    navigator.clipboard.writeText(toCurl(ev)).then(() => {
+      setCopiedIdx(i);
+      setTimeout(() => setCopiedIdx((cur) => (cur === i ? null : cur)), 1500);
+    });
+  };
 
   const findingsByEvent = useMemo(() => {
     const map = new Map<number, ReturnType<typeof scanNetworkEvents>>();
@@ -181,6 +190,19 @@ export function NetworkPrivacyReview({
                         {findings.length} secret{findings.length !== 1 ? "s" : ""}
                       </Badge>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => copyCurl(i, ev)}
+                      title="Copy as curl (scaffold — auth headers and long bodies are omitted)"
+                      className="shrink-0 flex items-center gap-1 rounded px-1 text-muted-foreground hover:text-foreground hover:bg-muted-foreground/15"
+                    >
+                      {copiedIdx === i ? (
+                        <Check className="size-3 text-primary" />
+                      ) : (
+                        <Copy className="size-3" />
+                      )}
+                      <span className="text-[10px]">{copiedIdx === i ? "copied" : "curl"}</span>
+                    </button>
                   </div>
                   {findings && !dropped && (
                     <div className="mt-1 flex flex-col gap-0.5 pl-6">

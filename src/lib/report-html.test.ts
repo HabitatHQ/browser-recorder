@@ -1,4 +1,4 @@
-import { buildTimeline } from "@browser-recorder/core";
+import { buildTimeline, toCurl } from "@browser-recorder/core";
 import { describe, expect, it } from "vitest";
 import { buildReportHtml } from "./report-html";
 
@@ -84,5 +84,35 @@ describe("buildReportHtml", () => {
     const viewer = scripts.find((s) => s.includes("window.__report") && s.includes("function"));
     expect(viewer).toBeTruthy();
     expect(() => new Function(viewer as string)).not.toThrow();
+  });
+
+  it("renders a copy-as-curl button on kept network rows", () => {
+    const timeline = buildTimeline({
+      startedAt: 0,
+      console: [],
+      network: [{ kind: "network", timestamp: 200, method: "GET", url: "https://x", status: 200 }],
+      interactions: [],
+    });
+    const html = buildReportHtml({ ...baseInput, timeline });
+    expect(html).toContain('class="curl-btn"');
+  });
+
+  it("inlines a toCurl twin that matches the core implementation (guards escaping drift)", () => {
+    const html = buildReportHtml({ ...baseInput, timeline: [] });
+    // Extract the inlined shQuote+toCurl pair and run it, so a divergence from
+    // packages/core (especially shell-escaping) fails here instead of silently
+    // producing a broken command in the report.
+    const src = html.match(/function shQuote[\s\S]*?return parts\.join\([^;]*\);\s*\}/)?.[0];
+    expect(src).toBeTruthy();
+    const inlineToCurl = new Function(`${src}; return toCurl;`)() as typeof toCurl;
+    const ev = {
+      kind: "network" as const,
+      timestamp: 0,
+      method: "POST",
+      url: "https://api/x?q=it's",
+      requestHeaders: { "x-note": "o'brien", accept: "*/*" },
+      requestBody: "name='eve'",
+    };
+    expect(inlineToCurl(ev)).toBe(toCurl(ev));
   });
 });
