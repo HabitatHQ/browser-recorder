@@ -1,6 +1,6 @@
 # Request replay
 
-Status: implemented (M1–M3), pending live E2E verification · Owner: —
+Status: implemented (M1–M3); live E2E partially verified (see §10) · Owner: —
 
 ## 1. Motivation
 
@@ -158,3 +158,17 @@ Per milestone: `pnpm test` (vitest) green; typecheck/biome clean; then drive the
 (`/run`) — capture a session on a same-origin API, copy-as-curl and confirm the scaffold, then
 edit-and-resend and confirm the response + diff render and that nothing replayed leaks into the
 exported zip.
+
+### Live E2E results
+
+- **Copy-as-curl (report):** verified in-browser. The button on each network row flips
+  `curl → copied` on click and writes a `curl '<url>' -H '…'` scaffold to the clipboard.
+- **Replay primitive (`replayInPage`):** verified in-browser against live endpoints — same-origin
+  GET (200/JSON), POST-with-body (`sendsBody` branch), and cross-origin (→ `error`/"Failed to
+  fetch", which drives the panel's CORS note). The background `replay-request` handler returns the
+  result only and never touches the session, so a replay cannot reach `debuggerEvents` or the zip
+  by construction.
+- **Not yet driven:** the review-panel UI *rendering* — `(was NNN)` status-diff badge, response
+  header/body collapsibles, original-body pane — and an actual zip export. The browser-automation
+  tooling used could not reach `chrome-extension://` review tabs; the underlying logic and unit
+  tests pass. Confirm by hand when convenient.
