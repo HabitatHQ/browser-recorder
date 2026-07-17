@@ -1,3 +1,4 @@
+import type { ReplayRequestInput } from "@browser-recorder/core";
 import { DEFAULT_RING_SCOPE, type RingScopeConfig, type RingScopeReason } from "./ring/scope";
 
 export type { RingScopeConfig, RingScopeMode, RingScopeReason } from "./ring/scope";
@@ -220,6 +221,7 @@ export type BgMessage =
   | { type: "unpin-site"; host: string }
   | { type: "save-ring-scope"; scope: RingScopeConfig }
   | { type: "get-error-log" }
-  | { type: "clear-error-log" };
+  | { type: "clear-error-log" }
+  | { type: "replay-request"; tabId: number; input: ReplayRequestInput };
 
 export type BgResponse<T = undefined> = { ok: true; data: T } | { ok: false; error: string };

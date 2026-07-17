@@ -20,6 +20,7 @@ import { fail, ok } from "@/lib/messaging";
 import { appendBytesToOpfs, readOpfsText, removeFromOpfs, writeToOpfs } from "@/lib/opfs";
 import { injectReplayRecorderIntoTab, stopReplayInTab } from "@/lib/replay";
 import { isReplayEventsMessage } from "@/lib/replay-messaging";
+import { replayInPage } from "@/lib/request-replay";
 import {
   type RingChannel,
   type RingRecord,
@@ -1096,6 +1097,24 @@ async function handleMessage(message: BgMessage) {
     case "export-ring":
       await snapshotRingAndExport();
       return ok(undefined);
+
+    case "replay-request": {
+      // Replay runs in the page's MAIN world (real origin + cookie jar). The
+      // result is returned to the caller only — it is never appended to the
+      // session or exported, so it bypasses the redaction pipeline entirely.
+      try {
+        const [res] = await chrome.scripting.executeScript({
+          target: { tabId: message.tabId },
+          world: "MAIN",
+          func: replayInPage,
+          args: [message.input],
+        });
+        if (!res || res.result == null) return fail("Replay returned no result");
+        return ok(res.result);
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : "Replay failed");
+      }
+    }
 
     default:
       return fail("Unknown message type");

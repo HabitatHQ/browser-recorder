@@ -24,9 +24,17 @@ export type {
   PerformanceSummaryOptions,
 } from "./perf-summary.js";
 export { summarizePerformance } from "./perf-summary.js";
-export type { SecretKind, SecretMatch, NetworkFieldArea, NetworkField, NetworkFinding } from "./redact.js";
+export type {
+  SecretKind,
+  SecretMatch,
+  NetworkFieldArea,
+  NetworkField,
+  NetworkFinding,
+} from "./redact.js";
 export { REDACTED, scanText, redactMatches, scanNetworkEvents } from "./redact.js";
 export type { NetworkEdit, NetworkEditResult } from "./network-edit.js";
 export { applyNetworkEdits } from "./network-edit.js";
 export { buildReproSteps } from "./repro.js";
 export { toCurl } from "./curl.js";
+export type { ReplayRequestInput, ReplayResult } from "./request-replay.js";
+export { seedReplayInput, headersToText, parseHeadersText } from "./request-replay.js";
