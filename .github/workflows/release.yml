@@ -16,9 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # pnpm 11.12.0 is a broken, deprecated release — its self-installer throws
+      # "Cannot use 'in' operator ... integrity"; 11.13.1 is the fixed patch.
       - uses: pnpm/action-setup@v6
         with:
-          version: 11.12.0
+          version: 11.13.1
 
       - uses: actions/setup-node@v7
         with:
