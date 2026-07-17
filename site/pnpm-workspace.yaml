@@ -1,0 +1,7 @@
+# Isolate the docs site from the extension's pnpm workspace at the repo root.
+# Its presence makes pnpm treat `site/` as an independent workspace root, so the
+# Astro toolchain never gets pulled into the extension install (and vice versa).
+packages: []
+allowBuilds:
+  esbuild: true
+  sharp: true

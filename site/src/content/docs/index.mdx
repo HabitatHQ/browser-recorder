@@ -1,0 +1,77 @@
+---
+title: Browser Recorder
+description: Capture everything you need to file a bug report — console, network, interactions, DOM, screenshots, and video — into a self-contained zip. No server, no account, no cloud.
+template: splash
+hero:
+  tagline: Capture everything you need to file a bug report into a self-contained zip. No server, no account, no cloud.
+  actions:
+    - text: Read the guide
+      link: /browser-recorder/guide/
+      icon: right-arrow
+    - text: Download from Releases
+      link: https://github.com/HabitatHQ/browser-recorder/releases
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Browser Recorder is a browser extension (Chrome + Firefox) that captures
+everything you need to file a bug report — console, network, interactions, DOM,
+screenshots, and optional video — and bundles it into a self-contained `.zip`
+you can hand to a teammate or paste into an issue.
+
+**No server, no account, no cloud.** Everything stays on your device until you
+explicitly export it.
+
+## What you get
+
+A single `.zip` per capture, named `browser-recording-{title}-{date}.zip`,
+containing a self-contained `report.html` viewer you can open in any browser.
+
+<CardGrid>
+  <Card title="Console" icon="seti:powershell">
+    `log`/`warn`/`error`/`info`/`debug` from page JS, plus uncaught errors.
+  </Card>
+  <Card title="Network" icon="random">
+    Every XHR/fetch request and response (headers + body), each copyable as a
+    `curl` scaffold.
+  </Card>
+  <Card title="WebSocket & SSE" icon="bars">
+    Lifecycle and message frames (payloads truncated to 4 kB).
+  </Card>
+  <Card title="Interactions" icon="pointer">
+    Clicks, inputs, navigations with element metadata.
+  </Card>
+  <Card title="DOM snapshots" icon="document">
+    Serialised HTML with inlined same-origin styles.
+  </Card>
+  <Card title="Screenshots" icon="seti:image">
+    Manual captures with an annotation canvas (arrow, rectangle, blur).
+  </Card>
+  <Card title="Video" icon="seti:video">
+    Tab recording via MediaRecorder (Chrome only).
+  </Card>
+  <Card title="Ring buffer" icon="approve-check">
+    Always-on background capture so you can export what *just happened* even if
+    you didn't start a session.
+  </Card>
+</CardGrid>
+
+## Quick start
+
+1. Click the extension icon (or press **Alt+Shift+R**). The icon badge turns red.
+2. Reproduce the bug — click around, do the things.
+3. Click the icon again (or **Alt+Shift+S**). The report tab opens.
+4. Edit the pre-filled reproduction notes, redact anything sensitive, and click **Export ZIP**.
+
+For "I didn't start a session but something just went wrong" — toggle **Ring
+recording** in the popup. It keeps the last 5 minutes in the background; click
+**Export ring** when you need it.
+
+## License
+
+[AGPL-3.0](https://github.com/HabitatHQ/browser-recorder/blob/main/LICENSE). This
+project includes code adapted from
+[crikket](https://github.com/redpangilinan/crikket) by
+[redpangilinan](https://github.com/redpangilinan), also AGPL-3.0.
