@@ -60,4 +60,4 @@ with a new "Last updated" date.
 ## Contact
 
 Questions: open an issue at
-<https://github.com/npalladium/chrome-recorder/issues>.
+<https://github.com/HabitatHQ/browser-recorder/issues>.
