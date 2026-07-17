@@ -1,0 +1,50 @@
+name: Release
+
+# CI equivalent of scripts/release.sh: on a pushed v* tag, build both browser
+# targets and publish a GitHub Release with the Chrome and Firefox zips.
+# (Chrome Web Store upload stays manual — run scripts/publish-chrome.sh.)
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # create the release and upload assets
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The zip names embed package.json's version; guard against a tag that
+      # doesn't match so the release assets can't disagree with the tag.
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_TAG="v$(node -p "require('./package.json').version")"
+          if [ "$PKG_TAG" != "${{ github.ref_name }}" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match package.json ($PKG_TAG)"
+            exit 1
+          fi
+
+      - name: Build Chrome + Firefox
+        run: pnpm package
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            .output/browser-recorder-*-chrome.zip
+            .output/browser-recorder-*-firefox.zip
