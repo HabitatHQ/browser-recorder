@@ -2,7 +2,7 @@ name: Release
 
 # CI equivalent of scripts/release.sh: on a pushed v* tag, build both browser
 # targets and publish a GitHub Release with the Chrome and Firefox zips.
-# (Chrome Web Store upload stays manual — run scripts/publish-chrome.sh.)
+# (On success this chains into publish-chrome.yml, which uploads to the store.)
 on:
   push:
     tags: ["v*"]
