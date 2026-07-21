@@ -1,0 +1,92 @@
+name: Publish to Chrome Web Store
+
+# Uploads the extension to the Chrome Web Store and submits it for review
+# (it goes live after Google approves). This is the CI equivalent of
+# `pnpm build:cws && pnpm publish:chrome --publish`.
+#
+# Triggers:
+#   - after the "Release" workflow (release.yml) completes successfully for a
+#     v* tag — so the store upload only happens once the GitHub Release is cut
+#   - manual dispatch, so a store upload can be re-run without re-tagging
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   CWS_EXTENSION_ID, CWS_CLIENT_ID, CWS_CLIENT_SECRET, CWS_REFRESH_TOKEN
+# See .env.publish.example / PUBLISH.md for how to obtain each value.
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Submit for publication (unchecked = upload as a draft only)"
+        type: boolean
+        default: true
+
+# Never let two uploads of this extension race each other.
+concurrency:
+  group: chrome-web-store
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-chrome:
+    runs-on: ubuntu-latest
+    # Manual runs always proceed. Chained runs proceed only when the Release
+    # workflow succeeded for a v* tag (head_branch is the tag name for a tag push).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    steps:
+      # For a chained run, check out the exact commit the Release built (the
+      # tagged commit) — a workflow_run's default ref is the default branch.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+
+      # pnpm 11.12.0 is a broken, deprecated release — its self-installer throws
+      # "Cannot use 'in' operator ... integrity"; 11.13.1 is the fixed patch.
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.13.1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The store version comes from package.json; guard against a tag that
+      # disagrees so we can't ship a build labelled with the wrong tag.
+      - name: Verify tag matches package.json version
+        if: github.event_name == 'workflow_run'
+        env:
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          PKG_TAG="v$(node -p "require('./package.json').version")"
+          if [ "$PKG_TAG" != "$TAG" ]; then
+            echo "::error::Tag $TAG does not match package.json ($PKG_TAG)"
+            exit 1
+          fi
+
+      - name: Build Chrome Web Store zip
+        run: pnpm build:cws
+
+      # Chained (tag) runs always auto-submit for review. Manual runs honour the
+      # `publish` input (default true) so a draft-only upload is still possible.
+      - name: Upload to Chrome Web Store
+        env:
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ] || [ "${{ inputs.publish }}" = "true" ]; then
+            ./scripts/publish-chrome.sh --publish
+          else
+            ./scripts/publish-chrome.sh
+          fi
