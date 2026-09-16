@@ -11,6 +11,7 @@ import type {
 import { buildReportMd, buildTimeline, summarizePerformance } from "@browser-recorder/core";
 import { Zip, ZipPassThrough } from "fflate";
 import { buildReplayHtml } from "./replay-html";
+import { loadReplayRuntimeSource } from "./replay-runtime";
 import { buildReportHtml } from "./report-html";
 
 function buildReadme(repoUrl: string | undefined): string {
@@ -258,6 +259,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
     ? Object.keys(domSnapshots).map((key) => `dom-snapshot-${key}.html`)
     : [];
   const replayName = include.replay && replayEvents.length > 1 ? "replay.html" : null;
+  const replayRuntime = replayName ? await loadReplayRuntimeSource() : null;
 
   // Read the recorded video from OPFS so it can be bundled into the ZIP. Large
   // (up to the configured cap), so it's gated by the include toggle; when off
@@ -395,9 +397,13 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
       }
     }
 
-    if (replayName) {
+    if (replayName && replayRuntime) {
       addText(zip, `${prefix}replay.json`, JSON.stringify(replayEvents));
-      addText(zip, `${prefix}replay.html`, buildReplayHtml(replayEvents, formValues.title));
+      addText(
+        zip,
+        `${prefix}replay.html`,
+        buildReplayHtml(replayEvents, formValues.title, replayRuntime)
+      );
     }
 
     if (videoBlob && videoName) {

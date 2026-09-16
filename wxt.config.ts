@@ -1,11 +1,36 @@
-import { readFileSync } from "node:fs"
-import tailwindcss from "@tailwindcss/vite"
-import { type Plugin, defineConfig } from "wxt"
+import { readFileSync } from "node:fs";
+import tailwindcss from "@tailwindcss/vite";
+import { type Plugin, defineConfig } from "wxt";
 
 // Single source of truth for the repo URL: package.json → manifest.homepage_url →
 // chrome.runtime.getManifest() at runtime. Keeps the repo slug out of the code.
 const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as {
-  homepage?: string
+  homepage?: string;
+};
+
+const rrwebReplayRuntime = readFileSync(
+  new URL("./node_modules/rrweb/dist/rrweb.umd.min.cjs", import.meta.url),
+  "utf8"
+).replace(
+  /[\uFDD0-\uFDEF\uFFFE\uFFFF]/g,
+  (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`
+);
+
+function packageRrwebReplayRuntime(): Plugin {
+  return {
+    name: "package-rrweb-replay-runtime",
+    generateBundle(_options, bundle) {
+      const runtimeIsReferenced = Object.values(bundle).some(
+        (file) => file.type === "chunk" && file.code.includes("/assets/rrweb-replay.js")
+      );
+      if (!runtimeIsReferenced) return;
+      this.emitFile({
+        type: "asset",
+        fileName: "assets/rrweb-replay.js",
+        source: rrwebReplayRuntime,
+      });
+    },
+  };
 }
 
 // chrome.scripting.executeScript validates injected files with base::IsStringUTF8,
@@ -21,7 +46,7 @@ function escapeUtf8NonCharacters(): Plugin {
       for (const file of Object.values(bundle)) {
         if (file.type !== "chunk") continue;
         file.code = file.code.replace(
-          new RegExp("[\\uFDD0-\\uFDEF\\uFFFE\\uFFFF]", "g"),
+          /[\uFDD0-\uFDEF\uFFFE\uFFFF]/g,
           (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`
         );
       }
@@ -33,7 +58,7 @@ export default defineConfig({
   srcDir: "src",
   modules: ["@wxt-dev/module-react"],
   vite: () => ({
-    plugins: [tailwindcss(), escapeUtf8NonCharacters()],
+    plugins: [tailwindcss(), packageRrwebReplayRuntime(), escapeUtf8NonCharacters()],
   }),
   manifest: ({ browser }) => {
     const isFirefox = browser === "firefox";
@@ -102,4 +127,4 @@ export default defineConfig({
   zip: {
     excludeSources: ["scratch/**"],
   },
-})
+});

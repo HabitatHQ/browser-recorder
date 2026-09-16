@@ -1,13 +1,7 @@
 // Builds a single self-contained HTML file that replays an rrweb session with
-// no extension and no network. We inline rrweb's UMD bundle + stylesheet and
-// drive its Replayer directly with a small vanilla control bar. (rrweb-player
-// 2.0.1 is a Svelte 5 component that renders blank under `new Player()`, so we
-// avoid it and use the same Replayer the in-extension preview uses.)
-//
-// Imported by relative path because rrweb's `exports` map doesn't expose the
-// UMD/min file as a subpath.
-import rrwebJs from "../../node_modules/rrweb/dist/rrweb.umd.min.cjs?raw";
-import rrwebCss from "../../node_modules/rrweb/dist/style.css?raw";
+// no extension and no network. The caller supplies the packaged rrweb runtime
+// used by the in-extension preview, and this builder inlines it for portability.
+import { replayStyles } from "./replay-runtime";
 
 function escapeHtml(text: string): string {
   return text
@@ -26,7 +20,7 @@ function inlineEventsJson(events: unknown[]): string {
   return JSON.stringify(events).replace(/</g, "\\u003c");
 }
 
-export function buildReplayHtml(events: unknown[], title: string): string {
+export function buildReplayHtml(events: unknown[], title: string, replayRuntime: string): string {
   const safeTitle = escapeHtml(title || "Session replay");
   return `<!doctype html>
 <html lang="en">
@@ -34,7 +28,7 @@ export function buildReplayHtml(events: unknown[], title: string): string {
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Replay — ${safeTitle}</title>
-<style>${rrwebCss}</style>
+<style>${replayStyles}</style>
 <style>
   html, body { margin: 0; background: #16181d; color: #e6e6e6; font: 14px system-ui, sans-serif; }
   .wrap { display: flex; flex-direction: column; gap: 12px; padding: 16px; max-width: 1280px; margin: 0 auto; }
@@ -55,7 +49,7 @@ export function buildReplayHtml(events: unknown[], title: string): string {
   </div>
   <div id="empty" class="hint" hidden>No replay data was captured for this session.</div>
 </div>
-<script>${rrwebJs}</script>
+<script>${replayRuntime}</script>
 <script>window.__replayEvents = ${inlineEventsJson(events)};</script>
 <script>
 (function () {

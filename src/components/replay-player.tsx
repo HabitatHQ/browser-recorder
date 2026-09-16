@@ -1,13 +1,54 @@
-import "rrweb/dist/style.css";
 import { stripReplayAutofocus } from "@/lib/replay-preprocess";
+import { replayRuntimeUrl, replayStyles } from "@/lib/replay-runtime";
 import { useEffect, useRef, useState } from "react";
-import { Replayer } from "rrweb";
 
-// In-extension session replay. We drive rrweb's Replayer directly (a plain
-// class) rather than rrweb-player, whose 2.0.1 build is a Svelte 5 component
-// that renders an empty shell under the legacy `new Player()` API. A small
-// custom control bar provides play/pause + scrub.
+// In-extension session replay. The player runs the same packaged UMD runtime
+// that export embeds into replay.html, avoiding a second ESM copy of rrweb.
 const BOX_WIDTH = 760;
+
+interface ReplayController {
+  getCurrentTime(): number;
+  getMetaData(): { totalTime: number };
+  on(event: "finish", listener: () => void): void;
+  pause(time?: number): void;
+  play(time?: number): void;
+}
+
+interface ReplayRuntime {
+  Replayer: new (
+    events: unknown[],
+    options: { root: HTMLElement; showWarning: boolean; mouseTail: boolean }
+  ) => ReplayController;
+}
+
+type ReplayWindow = Window &
+  typeof globalThis & {
+    rrweb?: ReplayRuntime;
+  };
+
+function escapeAttribute(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+const PREVIEW_DOCUMENT = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>${replayStyles}</style>
+<style>
+  html, body { margin: 0; overflow: hidden; background: #fff; }
+  #replay-root { width: 100%; }
+</style>
+</head>
+<body>
+<div id="replay-root"></div>
+<script src="${escapeAttribute(replayRuntimeUrl)}"></script>
+</body>
+</html>`;
 
 function fmt(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
@@ -20,9 +61,10 @@ export function ReplayPlayer({
   events: unknown[];
   stripAutofocus?: boolean;
 }) {
-  const frameRef = useRef<HTMLDivElement>(null);
-  const replayerRef = useRef<Replayer | null>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const replayerRef = useRef<ReplayController | null>(null);
   const rafRef = useRef(0);
+  const [runtimeGeneration, setRuntimeGeneration] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [total, setTotal] = useState(0);
   const [current, setCurrent] = useState(0);
@@ -31,17 +73,26 @@ export function ReplayPlayer({
 
   useEffect(() => {
     const frame = frameRef.current;
-    if (!frame || events.length < 2) return;
-    frame.innerHTML = "";
+    const frameWindow = frame?.contentWindow as ReplayWindow | null;
+    const root = frameWindow?.document.getElementById("replay-root");
+    if (!runtimeGeneration || !frameWindow || !root || events.length < 2) return;
+
+    root.replaceChildren();
     setError(null);
+    setPlaying(false);
+    setCurrent(0);
 
     const replayEvents = stripAutofocus ? stripReplayAutofocus(events) : events;
+    const RuntimeReplayer = frameWindow.rrweb?.Replayer;
+    if (!RuntimeReplayer) {
+      setError("The packaged replay runtime did not load");
+      return;
+    }
 
-    let replayer: Replayer;
+    let replayer: ReplayController;
     try {
-      // biome-ignore lint/suspicious/noExplicitAny: events are loaded from storage as plain JSON.
-      replayer = new Replayer(replayEvents as any, {
-        root: frame,
+      replayer = new RuntimeReplayer(replayEvents, {
+        root,
         showWarning: false,
         mouseTail: false,
       });
@@ -49,17 +100,18 @@ export function ReplayPlayer({
       setError(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
       return;
     }
+
     replayerRef.current = replayer;
     const totalTime = replayer.getMetaData().totalTime;
     setTotal(totalTime);
 
-    // Scale the recorded viewport down to fit our fixed-width box.
-    // biome-ignore lint/suspicious/noExplicitAny: meta event shape is internal.
-    const metaEvent = (events as any[]).find((e) => e?.type === 4);
-    const recW: number = metaEvent?.data?.width ?? BOX_WIDTH;
-    const recH: number = metaEvent?.data?.height ?? 480;
+    const metaEvent = events.find(
+      (event) => typeof event === "object" && event !== null && "type" in event && event.type === 4
+    ) as { data?: { width?: number; height?: number } } | undefined;
+    const recW = metaEvent?.data?.width ?? BOX_WIDTH;
+    const recH = metaEvent?.data?.height ?? 480;
     const scale = Math.min(1, BOX_WIDTH / recW);
-    const wrapper = frame.querySelector<HTMLElement>(".replayer-wrapper");
+    const wrapper = root.querySelector<HTMLElement>(".replayer-wrapper");
     if (wrapper) {
       wrapper.style.transform = `scale(${scale})`;
       wrapper.style.transformOrigin = "top left";
@@ -77,42 +129,42 @@ export function ReplayPlayer({
       try {
         replayer.pause();
       } catch {
-        // already torn down
+        // Already torn down.
       }
-      frame.innerHTML = "";
+      root.replaceChildren();
       replayerRef.current = null;
     };
-  }, [events, stripAutofocus]);
+  }, [events, runtimeGeneration, stripAutofocus]);
 
   const tick = () => {
-    const r = replayerRef.current;
-    if (!r) return;
-    setCurrent(Math.min(r.getCurrentTime(), total));
+    const replayer = replayerRef.current;
+    if (!replayer) return;
+    setCurrent(Math.min(replayer.getCurrentTime(), total));
     rafRef.current = requestAnimationFrame(tick);
   };
 
   const play = () => {
-    const r = replayerRef.current;
-    if (!r) return;
-    r.play(current >= total ? 0 : current);
+    const replayer = replayerRef.current;
+    if (!replayer) return;
+    replayer.play(current >= total ? 0 : current);
     setPlaying(true);
     rafRef.current = requestAnimationFrame(tick);
   };
 
   const pause = () => {
-    const r = replayerRef.current;
-    if (!r) return;
-    r.pause();
+    const replayer = replayerRef.current;
+    if (!replayer) return;
+    replayer.pause();
     setPlaying(false);
     cancelAnimationFrame(rafRef.current);
   };
 
-  const seek = (t: number) => {
-    const r = replayerRef.current;
-    if (!r) return;
-    setCurrent(t);
-    if (playing) r.play(t);
-    else r.pause(t);
+  const seek = (time: number) => {
+    const replayer = replayerRef.current;
+    if (!replayer) return;
+    setCurrent(time);
+    if (playing) replayer.play(time);
+    else replayer.pause(time);
   };
 
   if (events.length < 2) return null;
@@ -124,12 +176,14 @@ export function ReplayPlayer({
           Replay player error: {error}
         </div>
       )}
-      <div
-        className="overflow-hidden rounded-lg border border-border bg-white"
+      <iframe
+        ref={frameRef}
+        title="Session replay"
+        srcDoc={PREVIEW_DOCUMENT}
+        onLoad={() => setRuntimeGeneration((generation) => generation + 1)}
+        className="block overflow-hidden rounded-lg border border-border bg-white"
         style={{ width: BOX_WIDTH, height: boxHeight }}
-      >
-        <div ref={frameRef} />
-      </div>
+      />
       <div className="flex items-center gap-3">
         <button
           type="button"
@@ -143,7 +197,7 @@ export function ReplayPlayer({
           min={0}
           max={total || 1}
           value={current}
-          onChange={(e) => seek(Number(e.target.value))}
+          onChange={(event) => seek(Number(event.target.value))}
           className="flex-1 accent-primary"
         />
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
