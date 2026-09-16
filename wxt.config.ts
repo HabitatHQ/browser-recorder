@@ -90,6 +90,9 @@ export default defineConfig({
           gecko: {
             id: "browser-recorder@npalladium.dev",
             strict_min_version: "128.0",
+            data_collection_permissions: {
+              required: ["none"],
+            },
           },
         },
       }),
