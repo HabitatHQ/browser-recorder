@@ -36,13 +36,9 @@ export interface CaptureConfig {
 }
 
 export interface NetworkFilterConfig {
-  mode: "xhr-fetch" | "all";
   exclusionPatterns: string[];
   captureRequestBodies: boolean;
   captureXhrFetchResponseBodies: boolean;
-  captureOtherResponseBodies: boolean;
-  redactAuthHeader: boolean;
-  redactCookieHeader: boolean;
   customRedactedHeaders: string[];
 }
 
@@ -74,13 +70,9 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
 };
 
 export const DEFAULT_NETWORK_FILTER: NetworkFilterConfig = {
-  mode: "xhr-fetch",
   exclusionPatterns: [],
   captureRequestBodies: true,
   captureXhrFetchResponseBodies: true,
-  captureOtherResponseBodies: false,
-  redactAuthHeader: false,
-  redactCookieHeader: false,
   customRedactedHeaders: [],
 };
 
@@ -102,6 +94,8 @@ export interface Session {
   tabUrl: string | undefined;
   tabTitle: string | undefined;
   startedAt: number;
+  /** Fixed at Stop so review/export time does not inflate the recorded duration. */
+  stoppedAt?: number;
   status: "starting" | "recording" | "paused" | "stopping";
   captureConfig: CaptureConfig;
   debuggerSessionId: string | null;

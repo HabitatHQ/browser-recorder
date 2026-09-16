@@ -120,6 +120,8 @@ export function NetworkPrivacyReview({
         type="button"
         className="flex w-full items-center gap-2 text-left text-sm"
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls="network-privacy-details"
       >
         <ShieldAlert
           className={cn("h-4 w-4", flaggedCount > 0 ? "text-yellow-600" : "text-muted-foreground")}
@@ -128,7 +130,7 @@ export function NetworkPrivacyReview({
         <span className="text-xs text-muted-foreground">
           {events.length} request{events.length !== 1 ? "s" : ""}
           {flaggedCount > 0 ? ` · ${flaggedCount} flagged` : ""}
-          {droppedCount > 0 ? ` · ${droppedCount} dropped` : ""}
+          {droppedCount > 0 ? ` · ${droppedCount} removed` : ""}
           {redactedCount > 0 ? ` · ${redactedCount} redacted` : ""}
         </span>
         {open ? (
@@ -139,7 +141,7 @@ export function NetworkPrivacyReview({
       </button>
 
       {open && (
-        <div className="mt-3 flex flex-col gap-2">
+        <div id="network-privacy-details" className="mt-3 flex flex-col gap-2">
           {flaggedCount > 0 && (
             <div className="flex items-center gap-3 text-xs">
               <span className="text-muted-foreground">
@@ -172,7 +174,7 @@ export function NetworkPrivacyReview({
                         checked={dropped}
                         onChange={() => toggleDrop(i)}
                       />
-                      drop
+                      remove
                     </label>
                     <span
                       className={cn(

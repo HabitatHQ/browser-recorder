@@ -1,5 +1,6 @@
 import type { PageDiagnostics } from "../diagnostics";
 import type { Reporter } from "../types";
+import type { NetworkCapturePolicy } from "./policy";
 
 export interface PostNetworkPayload {
   method: string;
@@ -22,5 +23,6 @@ export interface NetworkCaptureInput {
     | "recordXhrCall"
     | "setXhrHookInstalled"
   >;
+  policy: NetworkCapturePolicy;
   postNetwork: (payload: PostNetworkPayload) => void;
 }

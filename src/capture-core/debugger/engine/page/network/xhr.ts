@@ -1,21 +1,17 @@
-import { MAX_BODY_LENGTH, MAX_HEADER_NAME_LENGTH, MAX_HEADER_VALUE_LENGTH } from "../constants";
+import { MAX_HEADER_NAME_LENGTH, MAX_HEADER_VALUE_LENGTH } from "../constants";
 import { parseRawHeaders } from "../headers";
 import { createStringifyValue } from "../serializer";
-import {
-  redactSensitiveQueryParams,
-  sanitizeCapturedBody,
-  shouldHideHeader,
-  toAbsoluteUrl,
-  truncate,
-} from "../utils";
+import { redactSensitiveQueryParams, sanitizeCapturedBody, toAbsoluteUrl } from "../utils";
+import { filterHeaderRecord } from "./policy";
 import { getRequestBodyPreviewAsync, scheduleBackgroundTask } from "./shared";
 import type { NetworkCaptureInput, PostNetworkPayload } from "./types";
 
 export const installXhrCapture = (input: NetworkCaptureInput): void => {
-  const { diagnostics, postNetwork, reporter } = input;
+  const { diagnostics, policy, postNetwork, reporter } = input;
   const stringifyValue = createStringifyValue(reporter);
 
   type XhrMeta = {
+    capture: boolean;
     method: string;
     url: string;
     startedAt: number;
@@ -32,14 +28,17 @@ export const installXhrCapture = (input: NetworkCaptureInput): void => {
     }
 
     const normalizedUrl = toAbsoluteUrl(state.url, reporter);
-    if (!normalizedUrl) {
+    if (!normalizedUrl || !state.capture) {
       return null;
     }
     const redactedUrl = redactSensitiveQueryParams(normalizedUrl);
 
     let requestBody: string | undefined;
     let responseBody: string | undefined;
-    const responseHeaders = parseRawHeaders(xhr.getAllResponseHeaders());
+    const responseHeaders = filterHeaderRecord(
+      policy,
+      parseRawHeaders(xhr.getAllResponseHeaders())
+    );
     const responseContentType = responseHeaders["content-type"] ?? "";
     try {
       requestBody = await state.requestBodyPromise;
@@ -47,17 +46,19 @@ export const installXhrCapture = (input: NetworkCaptureInput): void => {
       requestBody = undefined;
     }
 
-    try {
-      if (xhr.responseType === "" || xhr.responseType === "text") {
-        responseBody = truncate(xhr.responseText || "", MAX_BODY_LENGTH);
-      } else if (xhr.responseType === "json") {
-        responseBody = truncate(stringifyValue(xhr.response), MAX_BODY_LENGTH);
+    if (policy.captureResponseBodies) {
+      try {
+        if (xhr.responseType === "" || xhr.responseType === "text") {
+          responseBody = xhr.responseText || "";
+        } else if (xhr.responseType === "json") {
+          responseBody = stringifyValue(xhr.response);
+        }
+      } catch (error) {
+        reporter.reportNonFatalError(
+          "Failed to capture XHR response body in debugger instrumentation",
+          error
+        );
       }
-    } catch (error) {
-      reporter.reportNonFatalError(
-        "Failed to capture XHR response body in debugger instrumentation",
-        error
-      );
     }
 
     return {
@@ -103,7 +104,9 @@ export const installXhrCapture = (input: NetworkCaptureInput): void => {
     const normalizedMethod = typeof method === "string" ? method : "GET";
     const normalizedUrl = typeof url === "string" ? url : String(url ?? "");
 
+    const absoluteUrl = toAbsoluteUrl(normalizedUrl, reporter);
     xhrMetaMap.set(this, {
+      capture: absoluteUrl !== null && policy.shouldCaptureUrl(absoluteUrl),
       method: normalizedMethod,
       url: normalizedUrl,
       startedAt: Date.now(),
@@ -133,7 +136,7 @@ export const installXhrCapture = (input: NetworkCaptureInput): void => {
 
     if (meta) {
       const normalizedKey = key.trim().toLowerCase();
-      if (!shouldHideHeader(normalizedKey)) {
+      if (policy.shouldCaptureHeader(normalizedKey)) {
         meta.requestHeaders[normalizedKey.slice(0, MAX_HEADER_NAME_LENGTH)] = value.slice(
           0,
           MAX_HEADER_VALUE_LENGTH
@@ -150,12 +153,14 @@ export const installXhrCapture = (input: NetworkCaptureInput): void => {
     const meta = xhrMetaMap.get(this);
     if (meta) {
       meta.startedAt = Date.now();
-      meta.requestBodyPromise = getRequestBodyPreviewAsync(
-        reporter,
-        args[0],
-        stringifyValue,
-        meta.requestHeaders["content-type"] ?? ""
-      );
+      if (meta.capture && policy.captureRequestBodies) {
+        meta.requestBodyPromise = getRequestBodyPreviewAsync(
+          reporter,
+          args[0],
+          stringifyValue,
+          meta.requestHeaders["content-type"] ?? ""
+        );
+      }
     }
 
     this.addEventListener(

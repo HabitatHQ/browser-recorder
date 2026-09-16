@@ -23,7 +23,6 @@ export interface ReportEnvironment {
 export interface SettingsSummary {
   /** Enabled capture toggles, by key. */
   captures: string[];
-  networkMode: string;
   exclusionPatternCount: number;
   customRedactedHeaderCount: number;
 }
@@ -41,7 +40,6 @@ export function summarizeSettings(cc: CaptureConfig, nf: NetworkFilterConfig): S
     .map(String);
   return {
     captures,
-    networkMode: nf.mode,
     exclusionPatternCount: nf.exclusionPatterns.length,
     customRedactedHeaderCount: nf.customRedactedHeaders.length,
   };
@@ -68,7 +66,7 @@ export function buildEnvironmentBlock(data: ReportData): string {
     `Platform: ${env.platform}`,
     `User agent: ${env.userAgent}`,
     `Captures enabled: ${settings.captures.join(", ") || "none"}`,
-    `Network mode: ${settings.networkMode} (exclusions: ${settings.exclusionPatternCount}, custom redacted headers: ${settings.customRedactedHeaderCount})`,
+    `Network capture: fetch and XHR (exclusions: ${settings.exclusionPatternCount}, custom redacted headers: ${settings.customRedactedHeaderCount})`,
   ];
   const failed = failedStages(diagnostics);
   if (failed.length) {

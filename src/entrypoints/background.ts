@@ -544,7 +544,7 @@ export default defineBackground(() => {
       type RawEvent = { kind?: string; actionType?: string; metadata?: { mode?: string } };
       const events = rawEvents as RawEvent[];
 
-      if (bgSession?.tabId === tabId && bgSession.status !== "paused") {
+      if (bgSession?.tabId === tabId && bgSession.status === "recording") {
         let consoleN = 0;
         let networkN = 0;
         let interactionsN = 0;
@@ -817,14 +817,19 @@ async function handleMessage(message: BgMessage) {
       if (cc.replay) expectStage("replay", "inject");
       if (cc.video) expectStage("video", "start");
 
+      const { networkFilter } = await getSettings();
       try {
-        const { sessionId: dbgId } = await debuggerBridge.startSession(
-          tab.id,
-          message.captureConfig
-        );
+        const { sessionId: dbgId } = await debuggerBridge.startSession(tab.id, {
+          ...message.captureConfig,
+          network: networkFilter,
+        });
         bgSession.debuggerSessionId = dbgId;
       } catch (err) {
         reportNonFatalError("Failed to start debugger session", err);
+        bgSession = null;
+        await persistSession();
+        await resumeRingAfterSession();
+        return fail("Network capture could not start for this page.");
       }
 
       bgSession.status = "recording";
@@ -858,6 +863,7 @@ async function handleMessage(message: BgMessage) {
       // Resume first so MediaRecorder is in a stoppable state and rrweb stops cleanly.
       const wasStopPaused = bgSession.status === "paused";
       bgSession.status = "stopping";
+      bgSession.stoppedAt = Date.now();
       await persistSession();
       clearAutoCaptureTimers();
       if (wasStopPaused && bgSession.captureConfig.video) {
@@ -1592,10 +1598,11 @@ async function startRingOnTab(tabId: number): Promise<void> {
 
     // The ring honors the performance beta toggle so always-on capture matches
     // what an explicit session would collect.
-    const { captureConfig } = await getSettings();
+    const { captureConfig, networkFilter } = await getSettings();
     const { sessionId: dbgId } = await debuggerBridge.startSession(tabId, {
       fullSelectorPath: true,
       performance: captureConfig.performance,
+      network: networkFilter,
     });
     ringDebuggerSessionId = dbgId;
 

@@ -27,7 +27,7 @@ describe("buildReportMd — Problems section", () => {
           { kind: "network", timestamp: 1600, method: "POST", url: "https://x/api", status: 500 },
         ],
       },
-      now,
+      now
     );
     expect(md).toContain("## Problems");
     expect(md).toContain("[uncaught] TypeError: x");
@@ -38,27 +38,28 @@ describe("buildReportMd — Problems section", () => {
 
   it("omits the Problems section when nothing went wrong", () => {
     const md = buildReportMd(
-      { ...base, consoleEvents: [{ kind: "console", timestamp: 1500, level: "log", message: "ok" }] },
-      now,
+      {
+        ...base,
+        consoleEvents: [{ kind: "console", timestamp: 1500, level: "log", message: "ok" }],
+      },
+      now
     );
     expect(md).not.toContain("## Problems");
   });
 });
 
-describe("buildReportMd — dropped requests + redaction note", () => {
-  it("marks dropped requests and records the redaction summary", () => {
+describe("buildReportMd — redaction note", () => {
+  it("records the redaction summary", () => {
     const md = buildReportMd(
       {
         ...base,
         networkEvents: [
-          { kind: "network", timestamp: 1200, method: "GET", url: "https://x/secret", status: 200, dropped: true },
+          { kind: "network", timestamp: 1200, method: "GET", url: "https://x", status: 200 },
         ],
         redactedFieldCount: 3,
       },
-      now,
+      now
     );
-    expect(md).toContain("dropped");
-    expect(md).toMatch(/1 request.*dropped/i);
     expect(md).toMatch(/3 field.*redacted/i);
   });
 });

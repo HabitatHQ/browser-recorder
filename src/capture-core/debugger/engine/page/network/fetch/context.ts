@@ -1,13 +1,8 @@
-import { MAX_BODY_LENGTH } from "../../constants";
 import { toHeaderRecord } from "../../headers";
 import { getRequestBodyPreview, shouldCaptureTextContent } from "../../serializer";
 import type { Reporter } from "../../types";
-import {
-  redactSensitiveQueryParams,
-  sanitizeCapturedBody,
-  toAbsoluteUrl,
-  truncate,
-} from "../../utils";
+import { redactSensitiveQueryParams, sanitizeCapturedBody, toAbsoluteUrl } from "../../utils";
+import type { NetworkCapturePolicy } from "../policy";
 import { getRequestBodyPreviewAsync, getTextBodyPreviewAsync } from "../shared";
 import type { FetchCaptureContext } from "./types";
 
@@ -42,12 +37,15 @@ const getFetchRequestBodyPreview = async (
   stringifyValue: (value: unknown) => string,
   reporter: Reporter
 ): Promise<string | undefined> => {
+  const contentType =
+    requestHeaders?.get("content-type") ??
+    (input instanceof Request ? (input.headers.get("content-type") ?? "") : "");
   const initBodyPreview = getRequestBodyPreview(init?.body, stringifyValue);
   if (initBodyPreview) {
-    return initBodyPreview;
+    return sanitizeCapturedBody(initBodyPreview, contentType);
   }
 
-  if (!(input instanceof Request)) {
+  if (!(input instanceof Request) || !shouldCaptureTextContent(contentType)) {
     return undefined;
   }
 
@@ -56,15 +54,8 @@ const getFetchRequestBodyPreview = async (
     return undefined;
   }
 
-  const contentType =
-    requestHeaders?.get("content-type") ?? input.headers.get("content-type") ?? "";
-
-  if (!shouldCaptureTextContent(contentType)) {
-    return undefined;
-  }
-
   try {
-    return sanitizeCapturedBody(truncate(await input.clone().text(), MAX_BODY_LENGTH), contentType);
+    return sanitizeCapturedBody(await input.clone().text(), contentType);
   } catch (error) {
     reporter.reportNonFatalError(
       "Failed to capture fetch request body in debugger instrumentation",
@@ -108,13 +99,14 @@ export const resolveFetchContext = (
   args: Parameters<typeof window.fetch>,
   reporter: Reporter,
   stringifyValue: (value: unknown) => string,
-  requestBodyByRequest: WeakMap<Request, Promise<string | undefined>>
+  requestBodyByRequest: WeakMap<Request, Promise<string | undefined>>,
+  policy: NetworkCapturePolicy
 ): FetchCaptureContext | null => {
   const [requestInput, requestInit] = args;
   const method = resolveFetchMethod(requestInput, requestInit);
   const url = resolveFetchUrl(requestInput);
   const absoluteUrl = toAbsoluteUrl(url, reporter);
-  if (!absoluteUrl) {
+  if (!absoluteUrl || !policy.shouldCaptureUrl(absoluteUrl)) {
     return null;
   }
 
@@ -133,23 +125,25 @@ export const resolveFetchContext = (
   }
 
   const requestHeaders = requestHeaderSource
-    ? toHeaderRecord(requestHeaderSource)
+    ? toHeaderRecord(requestHeaderSource, policy.shouldCaptureHeader)
     : requestInput instanceof Request
-      ? toHeaderRecord(requestInput.headers)
+      ? toHeaderRecord(requestInput.headers, policy.shouldCaptureHeader)
       : {};
 
   const requestContentType =
     requestHeaderSource?.get("content-type") ??
     (requestInput instanceof Request ? (requestInput.headers.get("content-type") ?? "") : "");
 
-  const requestBodyPromise = resolveFetchRequestBodyPromise(
-    requestInput,
-    requestInit,
-    requestHeaderSource,
-    stringifyValue,
-    reporter,
-    requestBodyByRequest
-  );
+  const requestBodyPromise = policy.captureRequestBodies
+    ? resolveFetchRequestBodyPromise(
+        requestInput,
+        requestInit,
+        requestHeaderSource,
+        stringifyValue,
+        reporter,
+        requestBodyByRequest
+      )
+    : Promise.resolve(undefined);
 
   return {
     method,

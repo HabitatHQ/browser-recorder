@@ -5,7 +5,7 @@ import { installRequestConstructorCapture, resolveFetchContext } from "./context
 import { scheduleFetchFailurePost, scheduleFetchSuccessPost } from "./post";
 
 export const installFetchCapture = (input: NetworkCaptureInput): void => {
-  const { diagnostics, postNetwork, reporter } = input;
+  const { diagnostics, policy, postNetwork, reporter } = input;
   const stringifyValue = createStringifyValue(reporter);
   const requestBodyByRequest = new WeakMap<Request, Promise<string | undefined>>();
 
@@ -33,26 +33,43 @@ export const installFetchCapture = (input: NetworkCaptureInput): void => {
     isInsidePatchedFetch = true;
     diagnostics.recordFetchCall();
     const startedAt = Date.now();
-    const context = resolveFetchContext(args, reporter, stringifyValue, requestBodyByRequest);
+    const context = resolveFetchContext(
+      args,
+      reporter,
+      stringifyValue,
+      requestBodyByRequest,
+      policy
+    );
+    let responsePromise: Promise<Response>;
+    try {
+      responsePromise = delegateFetch(...args);
+    } finally {
+      // Reentrancy is only possible while synchronously entering a wrapper. Keeping
+      // this flag set until the response settles drops independent concurrent fetches.
+      isInsidePatchedFetch = false;
+    }
+
     if (!context) {
-      try {
-        return delegateFetch(...args);
-      } finally {
-        isInsidePatchedFetch = false;
-      }
+      return responsePromise;
     }
 
     try {
-      const response = await delegateFetch(...args);
+      const response = await responsePromise;
       const duration = Date.now() - startedAt;
-      scheduleFetchSuccessPost(reporter, postNetwork, context, response, duration);
+      scheduleFetchSuccessPost(reporter, policy, postNetwork, context, response, duration);
       return response;
     } catch (error) {
       diagnostics.recordFetchFailure(truncate(stringifyValue(error), 300));
-      scheduleFetchFailurePost(reporter, postNetwork, context, error, startedAt, stringifyValue);
+      scheduleFetchFailurePost(
+        reporter,
+        policy,
+        postNetwork,
+        context,
+        error,
+        startedAt,
+        stringifyValue
+      );
       throw error;
-    } finally {
-      isInsidePatchedFetch = false;
     }
   }) as typeof window.fetch;
 

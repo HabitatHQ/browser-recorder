@@ -27,12 +27,6 @@ export interface DebuggerNetworkEvent {
   responseHeaders?: Record<string, string>;
   requestBody?: string;
   responseBody?: string;
-  /**
-   * Set when the submitter dropped this request during review. Headers and
-   * bodies are stripped; method/url/status/timestamp are kept as a tombstone so
-   * the reviewer knows the request existed and was deliberately removed.
-   */
-  dropped?: boolean;
 }
 
 export interface DebuggerWebSocketEvent {

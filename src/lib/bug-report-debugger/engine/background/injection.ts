@@ -21,6 +21,7 @@ export async function injectDebuggerScriptIntoTab(tabId: number): Promise<void> 
     });
   } catch (error) {
     reportNonFatalError(`Failed to inject debugger into tab ${tabId}`, error);
+    throw error;
   }
 }
 

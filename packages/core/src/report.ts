@@ -62,7 +62,9 @@ export function buildReportMd(input: ReportInput, now: Date): string {
       parts.push(`- **${offset(e.timestamp)}** uncaught: ${escapeCell(e.message.slice(0, 160))}`);
     }
     for (const e of otherErrors) {
-      parts.push(`- **${offset(e.timestamp)}** console error: ${escapeCell(e.message.slice(0, 160))}`);
+      parts.push(
+        `- **${offset(e.timestamp)}** console error: ${escapeCell(e.message.slice(0, 160))}`
+      );
     }
     for (const e of failedRequests) {
       const u = e.url.length > 80 ? `${e.url.slice(0, 77)}...` : e.url;
@@ -90,7 +92,7 @@ export function buildReportMd(input: ReportInput, now: Date): string {
     parts.push(
       errorCount > 0
         ? `## Console (${consoleEvents.length} events, ${errorCount} error${errorCount !== 1 ? "s" : ""})`
-        : `## Console (${consoleEvents.length} events)`,
+        : `## Console (${consoleEvents.length} events)`
     );
     parts.push("");
     parts.push("| Time | Level | Message |");
@@ -104,12 +106,12 @@ export function buildReportMd(input: ReportInput, now: Date): string {
 
   if (networkEvents.length > 0) {
     const failedCount = networkEvents.filter(
-      (e) => e.status !== undefined && e.status >= 400,
+      (e) => e.status !== undefined && e.status >= 400
     ).length;
     parts.push(
       failedCount > 0
         ? `## Network (${networkEvents.length} requests, ${failedCount} failed)`
-        : `## Network (${networkEvents.length} requests)`,
+        : `## Network (${networkEvents.length} requests)`
     );
     parts.push("");
     parts.push("| Time | Method | URL | Status | Duration |");
@@ -117,24 +119,16 @@ export function buildReportMd(input: ReportInput, now: Date): string {
     for (const ev of networkEvents) {
       const time = startedAt !== null ? formatOffset(ev.timestamp - startedAt) : "—";
       const url = escapeCell(ev.url.length > 80 ? `${ev.url.slice(0, 77)}...` : ev.url);
-      const status = ev.dropped ? `${ev.status ?? "—"} (dropped)` : (ev.status ?? "—");
-      const duration = ev.dropped ? "—" : ev.duration !== undefined ? `${ev.duration}ms` : "—";
+      const status = ev.status ?? "—";
+      const duration = ev.duration !== undefined ? `${ev.duration}ms` : "—";
       parts.push(`| ${time} | ${ev.method} | ${url} | ${status} | ${duration} |`);
     }
     parts.push("");
 
-    const droppedCount = networkEvents.filter((e) => e.dropped).length;
-    if (droppedCount > 0 || redactedFieldCount > 0) {
-      const notes: string[] = [];
-      if (droppedCount > 0)
-        notes.push(
-          `${droppedCount} request${droppedCount !== 1 ? "s" : ""} dropped by the submitter (content removed; only that the request happened is recorded)`,
-        );
-      if (redactedFieldCount > 0)
-        notes.push(
-          `${redactedFieldCount} field${redactedFieldCount !== 1 ? "s" : ""} redacted by the submitter`,
-        );
-      parts.push(`> Privacy: ${notes.join("; ")}.`);
+    if (redactedFieldCount > 0) {
+      parts.push(
+        `> Privacy: ${redactedFieldCount} field${redactedFieldCount !== 1 ? "s" : ""} redacted by the submitter.`
+      );
       parts.push("");
     }
   }

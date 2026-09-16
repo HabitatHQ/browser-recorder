@@ -8,6 +8,8 @@ import type { PerformanceSummary, TimelineEntry } from "@browser-recorder/core";
 
 export interface ReportHtmlInput {
   title: string;
+  description?: string;
+  notes?: string;
   url: string | null;
   durationMs: number | null;
   recordedIso: string;
@@ -40,8 +42,9 @@ export function buildReportHtml(input: ReportHtmlInput): string {
   const safeTitle = escapeHtml(input.title || "Bug report");
   const data = {
     title: input.title || "Bug report",
-    url: input.url,
+    description: input.description ?? "",
     durationMs: input.durationMs,
+    notes: input.notes ?? "",
     recordedIso: input.recordedIso,
     device: input.device,
     timeline: input.timeline,
@@ -123,7 +126,7 @@ export function buildReportHtml(input: ReportHtmlInput): string {
   <h1 id="title"></h1>
   <div class="meta" id="meta"></div>
 
-  <div id="problemsWrap"></div>
+  <div id="narrative"></div>
 
   <div id="perfWrap"></div>
 
@@ -189,7 +192,9 @@ export function buildReportHtml(input: ReportHtmlInput): string {
   meta.push("Recorded: " + esc(R.recordedIso));
   if (R.device) meta.push(esc(R.device.os) + " · " + R.device.viewport.width + "×" + R.device.viewport.height);
   $("meta").innerHTML = meta.join(" &nbsp;·&nbsp; ");
-
+  if (R.description || R.notes) {
+    $("narrative").innerHTML = '<h2>Report</h2><div class="panel"><strong>Description</strong><p>' + esc(R.description) + '</p><strong>Steps and notes</strong><p>' + esc(R.notes) + '</p></div>';
+  }
   // curl scaffold for a network entry. Twin of packages/core/src/curl.ts (the
   // report viewer is a self-contained string with no imports, so it is inlined
   // here). Captured entries have auth headers stripped and bodies truncated, so
@@ -229,12 +234,11 @@ export function buildReportHtml(input: ReportHtmlInput): string {
       if (e.metadata && e.metadata.stack) detail = String(e.metadata.stack);
     } else if (k === "network") {
       var failed = e.status != null && e.status >= 400;
-      html = '<span class="mono">' + (e.dropped ? '<span class="fail">[dropped] </span>' : "")
-        + '<b class="' + (failed ? "fail" : "") + '">' + (e.status == null ? "—" : e.status) + '</b> '
+      html = '<span class="mono"><b class="' + (failed ? "fail" : "") + '">' + (e.status == null ? "—" : e.status) + '</b> '
         + esc(e.method) + ' ' + esc(e.url) + (e.duration != null ? ' · ' + e.duration + 'ms' : '') + '</span>'
-        + (e.dropped ? "" : ' <button type="button" class="curl-btn" title="Copy as curl (scaffold — auth headers and long bodies are omitted)">curl</button>');
+        + ' <button type="button" class="curl-btn" title="Copy as curl (scaffold — auth headers and long bodies are omitted)">curl</button>';
       text = e.method + " " + e.url + " " + (e.status || "");
-      if (!e.dropped) detail = netDetail(e);
+      detail = netDetail(e);
     } else if (k === "action") {
       var m = e.metadata || {};
       var label = m.label || m.text;
@@ -281,7 +285,7 @@ export function buildReportHtml(input: ReportHtmlInput): string {
       '<div class="badge b-' + entry.kind + '">' + (entry.kind === "action" ? "interact" : entry.kind === "performance" ? "perf" : entry.kind) + '</div>' +
       '<div class="summary"><div class="main">' + src + s.html + from + '</div>' +
       (s.sub ? '<div class="sub mono">' + s.sub + '</div>' : "") + detail + '</div>';
-    if (entry.kind === "network" && !entry.event.dropped) row.__curl = toCurl(entry.event);
+    if (entry.kind === "network") row.__curl = toCurl(entry.event);
     tl.appendChild(row);
     return row;
   });

@@ -41,6 +41,7 @@ pnpm package           # Both zips in one command
 pnpm check             # TypeScript (tsc --noEmit)
 pnpm test              # vitest run
 pnpm test:watch        # vitest
+pnpm test:mutation     # Stryker against deterministic policy cores
 pnpm lint              # biome check src
 ```
 

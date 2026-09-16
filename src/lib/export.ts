@@ -29,7 +29,7 @@ Captured with ${tool}.
 | events.json | Every channel merged into one timestamp-sorted timeline. Each entry has a \`seq\`, an \`offsetMs\` from session start, and \`initiatedBySeq\` linking it to the interaction that likely caused it. One file instead of cross-referencing the others by timestamp. |
 | metadata.json | Session info: URL, duration, browser, OS, viewport, device pixel ratio, color scheme, network type, installed extensions, active service workers |
 | console.json | Console events (log / info / warn / error / debug) captured during the session. Entries prefixed \`[uncaught]\` are unhandled JS exceptions; \`[unhandled rejection]\` are unhandled promise rejections. |
-| network.json | XHR and fetch requests: URL, method, status, headers, body (truncated at 10 kB), timing |
+| network.json | XHR and fetch requests: URL, method, status, headers, body (truncated at 4 kB after automatic redaction), timing |
 | interactions.json | User interactions: clicks, inputs, navigations, scrolls with CSS selector paths |
 | dom-snapshot-start.html | Page HTML captured at session start. Open in a browser — relative URLs resolve via \`<base href>\`. Cross-origin stylesheets are not inlined (CORS). |
 | dom-snapshot-N.html | On-demand DOM snapshots taken during the session |
@@ -44,7 +44,7 @@ Captured with ${tool}.
 - **Browser-native console entries** (e.g. \`ERR_BLOCKED_BY_CLIENT\`, preload warnings) are not present in console.json — they are injected into DevTools directly by Chrome and do not go through the JS \`console\` API.
 - Console and network capture only covers events that occurred **after the session was started**.
 - Sensitive headers (\`Authorization\`, \`Cookie\`) are redacted to \`[REDACTED]\` by default.
-- A network entry marked \`"dropped": true\` was deliberately removed by the submitter during review — only that the request happened (method, URL, status) is kept; headers and bodies are gone. report.md notes how many requests were dropped and how many fields were redacted.
+- A network entry you remove during review is excluded from every report artifact. Removing a request is different from redacting selected fields.
 `;
 }
 
@@ -282,7 +282,7 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
     url: session?.tabUrl ?? null,
     pageTitle: session?.tabTitle ?? null,
     timestamp: now.toISOString(),
-    sessionDurationMs: session ? now.getTime() - session.startedAt : null,
+    sessionDurationMs: session ? (session.stoppedAt ?? now.getTime()) - session.startedAt : null,
     captureConfig: session?.captureConfig ?? null,
     deviceInfo: {
       browser: navigator.userAgent,
@@ -330,6 +330,8 @@ export async function exportReportAsZip(input: ExportInput): Promise<string> {
       `${prefix}report.html`,
       buildReportHtml({
         title: formValues.title,
+        description: formValues.description,
+        notes: formValues.notes,
         url: session?.tabUrl ?? null,
         durationMs: metadata.sessionDurationMs,
         recordedIso: now.toISOString(),

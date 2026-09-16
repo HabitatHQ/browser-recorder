@@ -8,6 +8,7 @@ import {
   PAGE_EVENT_MESSAGE,
   START_SESSION_MESSAGE,
 } from "@/capture-core/debugger/constants";
+import type { NetworkCapturePolicyInput } from "@/capture-core/debugger/engine/page/network/policy";
 import type { DebuggerRuntimeResponse } from "@/capture-core/debugger/types";
 import { reportNonFatalError } from "@/shared/lib/errors";
 import { isDebuggerRuntimeMessage } from "../../messaging";
@@ -16,6 +17,7 @@ import { createDebuggerSessionStore } from "./session-store";
 interface BridgeCaptureConfig {
   fullSelectorPath?: boolean;
   performance?: boolean;
+  network?: NetworkCapturePolicyInput;
 }
 
 export interface DebuggerBridge {
@@ -126,6 +128,7 @@ export function registerDebuggerBackgroundListeners(
         const config = {
           fullSelectorPath: captureConfig?.fullSelectorPath ?? true,
           performance: captureConfig?.performance ?? false,
+          network: captureConfig?.network,
         };
         await chrome.scripting
           .executeScript({

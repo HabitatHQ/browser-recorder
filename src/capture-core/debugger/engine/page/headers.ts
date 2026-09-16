@@ -1,7 +1,10 @@
 import { MAX_HEADER_NAME_LENGTH, MAX_HEADER_VALUE_LENGTH } from "./constants";
 import { shouldHideHeader } from "./utils";
 
-export const toHeaderRecord = (input: Headers | null | undefined): Record<string, string> => {
+export const toHeaderRecord = (
+  input: Headers | null | undefined,
+  shouldCaptureHeader = (name: string) => !shouldHideHeader(name)
+): Record<string, string> => {
   if (!input) {
     return {};
   }
@@ -9,7 +12,7 @@ export const toHeaderRecord = (input: Headers | null | undefined): Record<string
   const result: Record<string, string> = {};
   for (const [key, value] of input.entries()) {
     const normalizedKey = key.trim().toLowerCase();
-    if (!normalizedKey || shouldHideHeader(normalizedKey)) {
+    if (!normalizedKey || !shouldCaptureHeader(normalizedKey)) {
       continue;
     }
 
@@ -18,7 +21,6 @@ export const toHeaderRecord = (input: Headers | null | undefined): Record<string
       MAX_HEADER_VALUE_LENGTH
     );
   }
-
   return result;
 };
 

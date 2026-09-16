@@ -1,6 +1,6 @@
 # Privacy Policy — Browser Recorder
 
-_Last updated: 2026-07-17_
+_Last updated: 2026-09-16_
 
 Browser Recorder is a bug-reporting capture tool. This policy explains what the
 extension does and does not do with your data.
@@ -23,6 +23,9 @@ extension records data from the tabs you record:
 - User interactions (clicks, inputs, navigations) and element metadata
 - DOM snapshots
 - Screenshots you take, and optional tab video
+- Optional dictation only when the browser exposes explicitly local speech
+  processing. If local processing is unavailable, dictation stays unavailable;
+  Browser Recorder does not fall back to remote speech recognition.
 - The list of your installed extensions (noted in the report metadata so a bug
   report records what else was running)
 
@@ -34,8 +37,10 @@ to a `.zip` file that you save to your own computer. That file is created and
 controlled entirely by you.
 
 The extension never uploads this data anywhere. It has no backend to send it to.
-Before exporting, you can redact or drop sensitive network entries and exclude
-large artifacts.
+Before exporting, you can remove complete network requests, redact detected fields,
+and exclude large artifacts. Automatic text redaction and the review are defense
+in depth, not a guarantee that screenshots, video, DOM snapshots, or replay data
+are safe to share.
 
 ## Data you share is your responsibility
 

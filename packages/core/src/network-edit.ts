@@ -2,7 +2,7 @@ import { type NetworkField, redactMatches, scanText } from "./redact.js";
 import type { DebuggerNetworkEvent } from "./types.js";
 
 export interface NetworkEdit {
-  /** Replace this request with a tombstone (records that it existed, strips content). */
+  /** Remove this request and every retained field from the reviewed report. */
   drop?: boolean;
   /** Fields to redact: each is re-scanned and its detected secrets replaced with [REDACTED]. */
   redactFields?: NetworkField[];
@@ -13,17 +13,6 @@ export interface NetworkEditResult {
   droppedCount: number;
   /** Number of (event, field) pairs that were redacted. */
   redactedCount: number;
-}
-
-function tombstone(ev: DebuggerNetworkEvent): DebuggerNetworkEvent {
-  return {
-    kind: "network",
-    timestamp: ev.timestamp,
-    method: ev.method,
-    url: ev.url,
-    status: ev.status,
-    dropped: true,
-  };
 }
 
 function redactField(ev: DebuggerNetworkEvent, field: NetworkField): boolean {
@@ -58,17 +47,21 @@ function redactField(ev: DebuggerNetworkEvent, field: NetworkField): boolean {
  */
 export function applyNetworkEdits(
   events: DebuggerNetworkEvent[],
-  edits: Record<number, NetworkEdit>,
+  edits: Record<number, NetworkEdit>
 ): NetworkEditResult {
   let droppedCount = 0;
   let redactedCount = 0;
 
-  const network = events.map((ev, i) => {
+  const network: DebuggerNetworkEvent[] = [];
+  events.forEach((ev, i) => {
     const edit = edits[i];
-    if (!edit) return ev;
+    if (!edit) {
+      network.push(ev);
+      return;
+    }
     if (edit.drop) {
       droppedCount++;
-      return tombstone(ev);
+      return;
     }
     if (edit.redactFields && edit.redactFields.length > 0) {
       const clone: DebuggerNetworkEvent = {
@@ -79,9 +72,10 @@ export function applyNetworkEdits(
       for (const field of edit.redactFields) {
         if (redactField(clone, field)) redactedCount++;
       }
-      return clone;
+      network.push(clone);
+      return;
     }
-    return ev;
+    network.push(ev);
   });
 
   return { network, droppedCount, redactedCount };

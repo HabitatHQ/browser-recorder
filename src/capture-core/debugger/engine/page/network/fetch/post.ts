@@ -3,19 +3,21 @@ import { toHeaderRecord } from "../../headers";
 import { shouldCaptureTextContent } from "../../serializer";
 import type { Reporter } from "../../types";
 import { sanitizeCapturedBody, truncate } from "../../utils";
+import { type NetworkCapturePolicy, filterHeaderRecord } from "../policy";
 import { getTextBodyPreviewAsync, scheduleBackgroundTask } from "../shared";
 import type { PostNetworkPayload } from "../types";
 import type { FetchCaptureContext } from "./types";
 
 const cloneFetchResponseForCapture = (
   response: Response,
-  reporter: Reporter
+  reporter: Reporter,
+  captureResponseBody: boolean
 ): {
   contentType: string;
   responseClone: Response | null;
 } => {
   const contentType = response.headers.get("content-type") ?? "";
-  if (!shouldCaptureTextContent(contentType) || response.bodyUsed) {
+  if (!captureResponseBody || !shouldCaptureTextContent(contentType) || response.bodyUsed) {
     return {
       contentType,
       responseClone: null,
@@ -41,13 +43,18 @@ const cloneFetchResponseForCapture = (
 
 export const scheduleFetchSuccessPost = (
   reporter: Reporter,
+  policy: NetworkCapturePolicy,
   postNetwork: (payload: PostNetworkPayload) => void,
   context: FetchCaptureContext,
   response: Response,
   duration: number
 ) => {
-  const responseHeaders = toHeaderRecord(response.headers);
-  const { contentType, responseClone } = cloneFetchResponseForCapture(response, reporter);
+  const responseHeaders = filterHeaderRecord(policy, toHeaderRecord(response.headers));
+  const { contentType, responseClone } = cloneFetchResponseForCapture(
+    response,
+    reporter,
+    policy.captureResponseBodies
+  );
 
   scheduleBackgroundTask(reporter, async () => {
     let requestBody: string | undefined;
@@ -62,24 +69,26 @@ export const scheduleFetchSuccessPost = (
       );
     }
 
-    try {
-      responseBody = await getTextBodyPreviewAsync(
-        reporter,
-        contentType,
-        "Failed to capture fetch response body text in debugger instrumentation",
-        () => {
-          if (!responseClone) {
-            return Promise.resolve("");
-          }
+    if (policy.captureResponseBodies) {
+      try {
+        responseBody = await getTextBodyPreviewAsync(
+          reporter,
+          contentType,
+          "Failed to capture fetch response body text in debugger instrumentation",
+          () => {
+            if (!responseClone) {
+              return Promise.resolve("");
+            }
 
-          return responseClone.text();
-        }
-      );
-    } catch (error) {
-      reporter.reportNonFatalError(
-        "Failed to capture fetch response body in debugger instrumentation",
-        error
-      );
+            return responseClone.text();
+          }
+        );
+      } catch (error) {
+        reporter.reportNonFatalError(
+          "Failed to capture fetch response body in debugger instrumentation",
+          error
+        );
+      }
     }
 
     postNetwork({
@@ -97,6 +106,7 @@ export const scheduleFetchSuccessPost = (
 
 export const scheduleFetchFailurePost = (
   reporter: Reporter,
+  policy: NetworkCapturePolicy,
   postNetwork: (payload: PostNetworkPayload) => void,
   context: FetchCaptureContext,
   error: unknown,
@@ -118,7 +128,9 @@ export const scheduleFetchFailurePost = (
       duration: Date.now() - startedAt,
       requestHeaders: context.requestHeaders,
       requestBody: sanitizeCapturedBody(requestBody, context.requestContentType),
-      responseBody: sanitizeCapturedBody(truncate(stringifyValue(error), MAX_BODY_LENGTH), ""),
+      responseBody: policy.captureResponseBodies
+        ? sanitizeCapturedBody(truncate(stringifyValue(error), MAX_BODY_LENGTH), "")
+        : undefined,
     });
   });
 };

@@ -1,4 +1,4 @@
-import { MAX_TEXT_LENGTH } from "./constants";
+import { MAX_BODY_LENGTH, MAX_TEXT_LENGTH } from "./constants";
 import type { Reporter } from "./types";
 
 const REDACTED_VALUE = "[REDACTED]";
@@ -170,23 +170,25 @@ export const sanitizeCapturedBody = (
   if (normalizedContentType.includes("application/json")) {
     try {
       const parsed = JSON.parse(body) as unknown;
-      return truncate(JSON.stringify(sanitizeStructuredValue(parsed)), MAX_TEXT_LENGTH * 2);
+      return truncate(JSON.stringify(sanitizeStructuredValue(parsed)), MAX_BODY_LENGTH);
     } catch {
+      // Partial JSON cannot be parsed reliably, including escaped key names. Do
+      // not retain an oversized partial payload whose redaction cannot be proved.
+      if (body.length >= MAX_BODY_LENGTH) {
+        return undefined;
+      }
       return truncate(
         body.replace(REDACTABLE_FIELD_PATTERN, `$1${REDACTED_VALUE}`),
-        MAX_TEXT_LENGTH * 2
+        MAX_BODY_LENGTH
       );
     }
   }
 
   if (normalizedContentType.includes("x-www-form-urlencoded")) {
-    return truncate(sanitizeUrlEncodedBody(body), MAX_TEXT_LENGTH * 2);
+    return truncate(sanitizeUrlEncodedBody(body), MAX_BODY_LENGTH);
   }
 
-  return truncate(
-    body.replace(REDACTABLE_FIELD_PATTERN, `$1${REDACTED_VALUE}`),
-    MAX_TEXT_LENGTH * 2
-  );
+  return truncate(body.replace(REDACTABLE_FIELD_PATTERN, `$1${REDACTED_VALUE}`), MAX_BODY_LENGTH);
 };
 
 export function createNonFatalReporter(): Reporter {

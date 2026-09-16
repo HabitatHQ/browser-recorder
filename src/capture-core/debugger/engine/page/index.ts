@@ -4,6 +4,7 @@ import { INSTALL_FLAG } from "./constants";
 import { createPageDiagnostics } from "./diagnostics";
 import { createEventQueue } from "./event-queue";
 import { type SSEPayload, type WebSocketPayload, installNetworkCapture } from "./network";
+import { type NetworkCapturePolicyInput, compileNetworkCapturePolicy } from "./network/policy";
 import { type PerformancePayload, installPerformanceCapture } from "./performance";
 import { createStringifyValue } from "./serializer";
 import type { ConsoleLevel } from "./types";
@@ -14,6 +15,7 @@ interface PageRuntimeConfig {
   fullSelectorPath?: boolean;
   /** Capture Web Vitals / long tasks / resource timing / memory / fps (beta). */
   performance?: boolean;
+  network?: NetworkCapturePolicyInput;
 }
 
 export function installDebuggerPageRuntime(config: PageRuntimeConfig = {}): void {
@@ -105,7 +107,10 @@ export function installDebuggerPageRuntime(config: PageRuntimeConfig = {}): void
   installUncaughtExceptionCapture({ reporter, postConsole });
 
   try {
-    installNetworkCapture({ diagnostics, reporter, postNetwork }, { postWebSocket, postSSE });
+    installNetworkCapture(
+      { diagnostics, reporter, policy: compileNetworkCapturePolicy(config.network), postNetwork },
+      { postWebSocket, postSSE }
+    );
   } catch (error) {
     reporter.reportNonFatalError("Failed to install network capture in debugger runtime", error);
   }

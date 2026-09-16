@@ -15,6 +15,11 @@ const baseInput = {
   replay: null,
 };
 
+const reportNarrative = {
+  description: "The save button does not persist the profile.",
+  notes: "1. Open settings\n2. Change the profile\n3. Select Save",
+};
+
 describe("buildReportHtml", () => {
   it("emits a self-contained HTML document carrying the title and the timeline data", () => {
     const timeline = buildTimeline({
@@ -56,6 +61,14 @@ describe("buildReportHtml", () => {
   it("renders the empty-state when nothing was captured", () => {
     const html = buildReportHtml({ ...baseInput, timeline: [] });
     expect(html).toContain("No timeline events were captured");
+  });
+
+  it("includes the report narrative in the portable HTML", () => {
+    const html = buildReportHtml({ ...baseInput, ...reportNarrative, timeline: [] });
+
+    expect(html).toContain(reportNarrative.description);
+    expect(html).toContain("Steps and notes");
+    expect(html).toContain("Open settings");
   });
 
   it("renders the performance scorecard when a summary is provided", () => {

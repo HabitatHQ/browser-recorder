@@ -24,23 +24,19 @@ describe("applyNetworkEdits", () => {
     expect(out.redactedCount).toBe(0);
   });
 
-  it("drops a request to a tombstone that records it existed", () => {
+  it("removes a request completely, including a potentially sensitive URL", () => {
     const out = applyNetworkEdits(events, { 1: { drop: true } });
     expect(out.droppedCount).toBe(1);
-    const tomb = out.network[1];
-    expect(tomb.dropped).toBe(true);
-    expect(tomb.url).toBe("https://api/secret-doc");
-    expect(tomb.method).toBe("GET");
-    expect(tomb.status).toBe(200);
-    // content fully stripped
-    expect(tomb.requestBody).toBeUndefined();
-    expect(tomb.responseBody).toBeUndefined();
-    expect(tomb.requestHeaders).toBeUndefined();
+    const removed = out.network[1];
+    expect(removed).toBeUndefined();
+    expect(out.network).toHaveLength(1);
   });
 
   it("redacts only the requested fields, leaving others intact", () => {
     const out = applyNetworkEdits(events, {
-      0: { redactFields: [{ area: "requestBody" }, { area: "requestHeader", name: "authorization" }] },
+      0: {
+        redactFields: [{ area: "requestBody" }, { area: "requestHeader", name: "authorization" }],
+      },
     });
     const ev = out.network[0];
     expect(ev.requestBody).not.toContain("hunter2");

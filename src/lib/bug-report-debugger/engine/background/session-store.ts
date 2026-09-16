@@ -141,7 +141,13 @@ export function createDebuggerSessionStore(): DebuggerSessionStore {
       sessionsById.set(sessionId, session);
       tabToSession.set(payload.captureTabId, sessionId);
       schedulePersist();
-      await injectDebuggerScriptIntoTab(payload.captureTabId);
+      try {
+        await injectDebuggerScriptIntoTab(payload.captureTabId);
+      } catch (error) {
+        removeSession(sessionId);
+        schedulePersist();
+        throw error;
+      }
       return { sessionId, startedAt };
     },
 

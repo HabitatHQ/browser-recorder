@@ -1,3 +1,4 @@
+import { evaluateLocalDictation } from "@/lib/dictation-policy";
 import { cn } from "@/lib/utils";
 import { Mic, MicOff } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -15,6 +16,7 @@ interface SpeechRecog extends EventTarget {
   continuous: boolean;
   interimResults: boolean;
   lang: string;
+  processLocally?: boolean;
   onresult: ((event: SpeechRecognitionEvent) => void) | null;
   onend: ((event: Event) => void) | null;
   onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
@@ -30,6 +32,20 @@ const RecognitionAPI: SpeechRecogCtor | undefined =
     ? // biome-ignore lint/suspicious/noExplicitAny: SpeechRecognition / webkitSpeechRecognition not in DOM types
       ((window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition)
     : undefined;
+
+const localDictation = (() => {
+  if (!RecognitionAPI) {
+    return evaluateLocalDictation({
+      recognitionAvailable: false,
+      localProcessingAvailable: false,
+    });
+  }
+  const recognition = new RecognitionAPI();
+  return evaluateLocalDictation({
+    recognitionAvailable: true,
+    localProcessingAvailable: "processLocally" in recognition,
+  });
+})();
 
 function useSpeechInput(value: string, onChange: (v: string) => void) {
   const [isListening, setIsListening] = useState(false);
@@ -48,7 +64,7 @@ function useSpeechInput(value: string, onChange: (v: string) => void) {
   }, []);
 
   const start = useCallback(() => {
-    if (!RecognitionAPI) return;
+    if (!RecognitionAPI || !localDictation.available) return;
     // Snapshot the field value at the moment recording begins
     baseRef.current = value;
     finalRef.current = "";
@@ -57,6 +73,7 @@ function useSpeechInput(value: string, onChange: (v: string) => void) {
     recog.continuous = true;
     recog.interimResults = true;
     recog.lang = navigator.language || "en-US";
+    recog.processLocally = true;
 
     recog.onresult = (event) => {
       let finalText = "";
@@ -106,7 +123,7 @@ function useSpeechInput(value: string, onChange: (v: string) => void) {
     };
   }, []);
 
-  return { isListening, toggle, supported: !!RecognitionAPI };
+  return { isListening, toggle, supported: localDictation.available };
 }
 
 export function MicButton({

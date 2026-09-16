@@ -301,7 +301,7 @@ export default function App() {
                   <Label htmlFor="opt-network" className="font-medium">
                     Network requests
                   </Label>
-                  <InfoTooltip text="Captures XHR and fetch calls including URL, method, HTTP status, headers, and bodies (truncated to 10 kB each). Configure which requests to capture and which to exclude in the Network filter section below." />
+                  <InfoTooltip text="Captures XHR and fetch calls including URL, method, HTTP status, and permitted headers and bodies. Bodies are truncated to 4 kB after automatic redaction. Configure exclusions and body capture in the Network filter section below." />
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   XHR and fetch calls (configurable below)
@@ -418,46 +418,6 @@ export default function App() {
 
           <div className="flex flex-col gap-4">
             <div>
-              <div className="flex items-center gap-1.5 mb-2">
-                <Label className="font-medium">Capture mode</Label>
-                <InfoTooltip text="XHR + fetch only captures API calls and is almost always sufficient. All resources also includes scripts, stylesheets, fonts, and images — useful for diagnosing resource loading failures but generates 10–100× more entries." />
-              </div>
-              <div className="flex flex-col gap-2">
-                <label className="flex items-center gap-2 cursor-pointer text-sm">
-                  <input
-                    type="radio"
-                    name="capture-mode"
-                    value="xhr-fetch"
-                    checked={networkFilter.mode === "xhr-fetch"}
-                    onChange={() => {
-                      setNetworkFilter((n) => ({ ...n, mode: "xhr-fetch" }));
-                      setIsDirty(true);
-                    }}
-                    className="accent-primary"
-                  />
-                  XHR + fetch only
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer text-sm">
-                  <input
-                    type="radio"
-                    name="capture-mode"
-                    value="all"
-                    checked={networkFilter.mode === "all"}
-                    onChange={() => {
-                      setNetworkFilter((n) => ({ ...n, mode: "all" }));
-                      setIsDirty(true);
-                    }}
-                    className="accent-primary"
-                  />
-                  All resources{" "}
-                  <span className="text-muted-foreground">
-                    (includes static assets — can generate 500+ requests per page load)
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <div>
               <div className="flex items-center gap-1.5 mb-1">
                 <Label htmlFor="exclusion-patterns" className="font-medium">
                   URL exclusion patterns
@@ -486,9 +446,9 @@ export default function App() {
                   <Label htmlFor="opt-req-bodies" className="font-medium">
                     Request bodies
                   </Label>
-                  <InfoTooltip text="Captures the payload for POST, PUT, and PATCH requests. Truncated to 10 kB. May contain sensitive data — disable if the app sends credentials or PII in request bodies." />
+                  <InfoTooltip text="Captures the payload for POST, PUT, and PATCH requests. Truncated to 4 kB after automatic redaction. May contain sensitive data — disable if the app sends credentials or PII in request bodies." />
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">Truncated at 10 kB</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Truncated at 4 kB</p>
               </div>
               <Switch
                 id="opt-req-bodies"
@@ -503,9 +463,9 @@ export default function App() {
                   <Label htmlFor="opt-res-xhr" className="font-medium">
                     XHR + fetch response bodies
                   </Label>
-                  <InfoTooltip text="Captures the response payload for XHR and fetch calls. Truncated to 10 kB. Useful for seeing what the server returned, but increases export size. Off by default." />
+                  <InfoTooltip text="Captures the response payload for XHR and fetch calls. Truncated to 4 kB after automatic redaction. Disable it when response data may contain sensitive information." />
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">Truncated at 10 kB</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Truncated at 4 kB</p>
               </div>
               <Switch
                 id="opt-res-xhr"
@@ -513,69 +473,22 @@ export default function App() {
                 onChange={() => toggleNetwork("captureXhrFetchResponseBodies")}
               />
             </div>
-
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="opt-res-other" className="font-medium">
-                    Other response bodies
-                  </Label>
-                  <InfoTooltip text="Captures response bodies for scripts, stylesheets, fonts, and images. Almost never needed and can make exports very large. Only enable this if you're diagnosing a specific resource loading issue." />
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Scripts, stylesheets, images — high volume
-                </p>
-              </div>
-              <Switch
-                id="opt-res-other"
-                checked={networkFilter.captureOtherResponseBodies}
-                onChange={() => toggleNetwork("captureOtherResponseBodies")}
-              />
-            </div>
           </div>
         </section>
 
         <section className="mb-6">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-            Header redaction
+            Header protection
           </h2>
           <Separator className="mb-4" />
 
           <div className="flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="opt-redact-auth" className="font-medium">
-                  Redact Authorization header
-                </Label>
-                <InfoTooltip text="Replaces the Authorization header value with [REDACTED] in captured network data. Keeps Bearer tokens, Basic credentials, and API keys out of exported reports. On by default." />
-              </div>
-              <Switch
-                id="opt-redact-auth"
-                checked={networkFilter.redactAuthHeader}
-                onChange={() => toggleNetwork("redactAuthHeader")}
-              />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="opt-redact-cookie" className="font-medium">
-                  Redact Cookie header
-                </Label>
-                <InfoTooltip text="Replaces the Cookie header value with [REDACTED]. Session cookies and auth tokens are especially sensitive. On by default." />
-              </div>
-              <Switch
-                id="opt-redact-cookie"
-                checked={networkFilter.redactCookieHeader}
-                onChange={() => toggleNetwork("redactCookieHeader")}
-              />
-            </div>
-
             <div>
               <div className="flex items-center gap-1.5 mb-1">
                 <Label htmlFor="custom-headers" className="font-medium">
                   Custom headers to redact
                 </Label>
-                <InfoTooltip text="Additional request headers to redact beyond Authorization and Cookie. Header names are case-insensitive. Common examples: X-Api-Key, X-Auth-Token, X-Session-Id." />
+                <InfoTooltip text="Additional headers to omit from captured network data. Authorization, Cookie, and other credential-like headers are always omitted. Header names are case-insensitive." />
               </div>
               <Textarea
                 id="custom-headers"
