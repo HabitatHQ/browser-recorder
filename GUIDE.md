@@ -49,6 +49,7 @@ Chrome video settings offer 720p, 1080p, or native resolution; 15, 24, 30, or 60
 
 ### Session replay input masking
 
+
 Session replay masking applies to native text inputs, textareas, selects, and
 contenteditable elements other than `contenteditable="false"`. It is best effort,
 not a promise that replay is safe to share: checkbox/radio values, select option
