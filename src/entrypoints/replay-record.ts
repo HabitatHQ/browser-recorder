@@ -18,6 +18,10 @@ export default defineUnlistedScript(() => {
   w.__recorderReplayActive = true;
 
   const stop = record({
+    // Mask before events leave the page, including snapshots and later edits.
+    // Editable DOM text is separate from rrweb's native form-value masking.
+    maskAllInputs: true,
+    maskTextSelector: '[contenteditable]:not([contenteditable="false" i])',
     emit(event) {
       window.postMessage({ source: REPLAY_BRIDGE_SOURCE, kind: "event", event }, "*");
     },

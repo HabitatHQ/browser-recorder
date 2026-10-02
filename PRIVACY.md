@@ -20,8 +20,11 @@ extension records data from the tabs you record:
 - Console messages and uncaught errors
 - Network requests and responses (headers and bodies)
 - WebSocket and Server-Sent Events frames
-- User interactions (clicks, inputs, navigations) and element metadata
-- DOM snapshots
+- Session replay masks textual native input values and editable-region text before
+  events leave the page. This is best effort, not a privacy guarantee: checkbox/radio
+  values, select option labels, screenshots, video, ordinary page text, custom
+  widgets, and data copied elsewhere may still reveal sensitive information.
+  Review the complete report before sharing; existing recordings are not changed.
 - Screenshots you take, and optional tab video
 - Optional dictation only when the browser exposes explicitly local speech
   processing. If local processing is unavailable, dictation stays unavailable;

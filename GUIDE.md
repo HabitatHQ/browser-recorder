@@ -59,6 +59,20 @@ All channels are independently toggled in the **popup** or the **Options page** 
 
 Enable **auto-capture** in Options to take a DOM snapshot and/or screenshot automatically after each recorded interaction.
 
+### Session replay input masking
+
+When session replay is enabled, textual native input, textarea, and select
+values are masked before replay events are stored, including values entered or
+changed during capture. Text inside elements marked `contenteditable` is also
+masked, unless `contenteditable="false"`. Ordinary page text remains visible.
+Masking happens when capturing; it does not alter the page's live form values.
+
+This is best-effort privacy protection, not a guarantee. Checkbox/radio values,
+select option labels, custom widgets, credentials copied into ordinary text or
+attributes, screenshots, video, and other capture channels may still expose
+sensitive data. Review the whole report before sharing. Recordings made before
+this change are not retroactively masked.
+
 ### Ring recording
 
 Ring recording is an always-on buffer that continuously captures the last N minutes in the background, without a formal session.
