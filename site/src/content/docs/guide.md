@@ -1,128 +1,209 @@
 ---
 title: Guide
-description: Install Browser Recorder, capture a bug report, review and redact it, and export a self-contained zip.
+description: Install Browser Recorder, capture a bug report, review privacy controls, and export local artifacts.
 ---
 
 ## Installation
 
+Download the browser-specific zip from [GitHub Releases](https://github.com/HabitatHQ/browser-recorder/releases), then extract it.
+
 ### Chrome
 
-1. Extract the downloaded zip to a local folder.
-2. Open `chrome://extensions`.
-3. Enable **Developer mode** (toggle, top-right).
-4. Click **Load unpacked** and select the extracted folder.
+1. Open `chrome://extensions`.
+2. Enable **Developer mode**.
+3. Click **Load unpacked** and select the extracted `browser-recorder-<version>-chrome` folder.
 
-### Firefox
+### Firefox 128+
 
-1. Extract the downloaded zip to a local folder.
-2. Open `about:debugging#/runtime/this-firefox`.
-3. Click **Load Temporary Add-on** and select the `manifest.json` inside the folder.
+1. Open `about:debugging#/runtime/this-firefox`.
+2. Click **Load Temporary Add-on** and select `manifest.json` from the extracted `browser-recorder-<version>-firefox` folder.
 
-:::note
-A temporary add-on is removed when Firefox restarts — you'll need to load it
-again. Video capture is Chrome-only (Firefox lacks the `tabCapture`/`offscreen`
-APIs); all other channels work on both browsers.
-:::
-
-The extension icon appears in the toolbar. Pin it for quick access.
+::::note
+Firefox temporary add-ons are removed when Firefox restarts. Firefox supports video
+for an explicit session through a dedicated capture tab and browser picker; it does
+not support continuous-capture ring video. Pin the extension icon for quick access.
+::::
 
 ## Usage
 
-### Two ways to capture
+### Start, pause, stop, or discard a session
 
-There are two independent capture modes — use whichever fits the situation:
-
-| Mode | When to use |
-|---|---|
-| **Session** | You know you're about to reproduce a bug. Start → reproduce → stop → export. |
-| **Ring recording** | You didn't plan to record but something just went wrong. The ring buffer keeps the last N minutes silently in the background — just export what's already there. |
-
-### Starting a session
-
-Click the extension icon or press **Alt+Shift+R**. The icon badge turns red while recording is active.
+Open the popup and click **Start session** (or press **Alt+Shift+R**). Choose the
+session channels in the popup or configure defaults in **Options**. During capture,
+the popup has explicit **Pause**, **Resume**, **Stop & report**, and **Discard
+session** buttons. Stop opens the review page; discard removes the active session's
+captured data. Screenshots and DOM snapshots can be taken during a session and
+included in its report.
 
 ![Popup](../../assets/screenshots/popup.png)
 
-Click the icon again (or press **Alt+Shift+S**) to stop the session. The report tab opens automatically — complete or close it to finish.
+A paused session stops its page-event capture. Continuous capture is suspended for
+the entire explicit session, including while that session is paused. On Firefox,
+the separate picker-mediated video stream is not controlled by the popup's
+pause/resume buttons; stop or discard the session to end that video capture.
 
-### Capture channels
+### Capture channels and settings
 
-All channels are independently toggled in the **popup** or the **Options page** (`chrome://extensions` → Chrome Recorder → Extension options).
+The popup has per-session switches for **Console**, **Network**, **Interactions**,
+**DOM snapshots**, **Video recording**, and experimental **Session replay**.
+Detailed settings are in the extension **Options** page. Network captures XHR/fetch
+plus WebSocket and SSE; those latter two are grouped with Network, not independently
+toggled. Network body capture, response-body capture, URL exclusions, and custom
+header redaction are configured in Options and take effect for subsequent capture.
+Credential-like headers are omitted and recognised sensitive URL/body values are
+automatically redacted during capture; this does not guarantee every secret is
+found or other artifacts are safe.
 
 ![Options](../../assets/screenshots/options.png)
 
 | Channel | What it records |
 |---|---|
-| Console | `console.log/warn/error/info/debug` calls in page JS |
-| Network | XHR and fetch requests/responses (body and headers configurable) |
-| WebSocket | `open`, `close`, `error` lifecycle + each `send` (↑) and `message` (↓), payload truncated to 4 kB |
-| SSE | `EventSource` `open`, `error`, and `message` events (including named event types) |
-| Interactions | Clicks, inputs, navigations — with CSS selectors and element metadata |
-| DOM snapshots | Serialised page HTML with inlined same-origin styles |
-| Screenshots | Manual captures with annotation canvas (arrow, rectangle, blur tools) |
-| Video | Tab capture via MediaRecorder; streamed to OPFS (2 Mbps, 500 MB max) |
+| Console | Page JavaScript `console.log/warn/error/info/debug` calls and uncaught errors; not browser-native DevTools messages |
+| Network | XHR/fetch requests and responses; body collection and exclusions configurable in Options |
+| WebSocket and SSE | Lifecycle and message events, grouped under Network |
+| Interactions | Clicks, input changes, navigations, and element metadata; entered text is not captured as raw text |
+| DOM snapshots | Page HTML at session start (when enabled) and on demand |
+| Screenshots | On demand; optionally auto-captured after interactions in Options; annotate/redact in the editor |
+| Video | Optional session video; configurable resolution (720p default), frame rate (30 fps), bitrate (1.5 Mbps), and format (auto) |
+| Session replay | DOM session replay, marked experimental; best-effort masking of native input values and contenteditable text before events leave the page; cross-origin styles/canvas may render imperfectly |
+| Performance | Optional beta metrics; also available to continuous capture when enabled |
 
-Enable **auto-capture** in Options to take a DOM snapshot and/or screenshot automatically after each recorded interaction.
+Chrome video settings offer 720p, 1080p, or native resolution; 15, 24, 30, or
+60 fps; 500 kbps through 4 Mbps; and browser-supported auto/VP9/VP8/AV1/H.264
+formats. 720p/30 fps/1.5 Mbps/auto are defaults, not fixed limits. Chrome warns
+at 100 MB and stops that recording at 500 MB; size depends on settings and content.
+Video is written to local OPFS and can be downloaded separately from report review.
+Firefox's picker-mediated session video has its own browser controls and does not
+use the Chrome encoder settings.
 
-### Ring recording
+### Session replay input masking
 
-Ring recording is an always-on buffer that continuously captures the last N minutes in the background, without a formal session.
+Session replay masking applies to native text inputs, textareas, selects, and
+contenteditable elements other than `contenteditable="false"`. It is best effort,
+not a promise that replay is safe to share: checkbox/radio values, select option
+labels, custom widgets, ordinary page text/attributes, and other unmasked content
+may remain. This replay-only masking does not redact static DOM snapshots,
+screenshots, video, or other capture channels, and it does not change recordings
+made before masking was added.
 
-**To enable:** open the popup and toggle **Ring recording** on. The buffer starts immediately on the current tab and follows you as you switch tabs. A live count of buffered events is shown below the toggle.
+Masking happens during capture; it does not alter the page's live form values.
 
-**To export:** click **Export ring** in the popup. The report tab opens pre-populated with the buffered data — add a title and any notes, then export the ZIP.
-
-Ring recording captures the same data as a session (console, network, interactions, and optionally video on Chrome). Configure the buffer duration separately for data and video in **Options → Ring recording** (default: 5 minutes each).
-
-:::note
-Ring video pauses while a session with video recording is active, since both
-share the same capture mechanism. Data buffering (console/network/interactions)
-is unaffected.
-:::
-
-### Taking a screenshot
-
-Press **Alt+Shift+C** or click **Screenshot** in the popup. The annotation canvas opens — draw arrows, rectangles, or apply blur before saving (circle the problem or redact anything sensitive).
+Screenshot and DOM actions also work without a session. A standalone screenshot
+opens its own annotation/review page; a standalone DOM snapshot opens its own review
+page for an HTML download. These files are not retroactively attached to a later
+session.
 
 ![Annotation editor](../../assets/screenshots/annotation.png)
 
-Screenshots taken outside a session are included if a session is started before exporting.
 
-### Reviewing before export
+### Continuous capture (Always on)
 
-The report tab is also a review screen. Before exporting you can:
+In the popup, **Continuous capture → Always on** controls a rolling background
+buffer. Its default is off and its default retention windows are 5 minutes for
+data and video. Continuous data includes console, network (including WebSocket/SSE),
+interactions, and optional performance; it does not include session replay,
+standalone screenshots/DOM snapshots, or Firefox video. New events are collected
+from the focused eligible tab. Up to eight tabs' recent data can be retained as you
+switch; only the focused tab is actively captured, and video follows that active
+tab rather than being retained with switched-away tab histories.
 
-- **Edit the steps to reproduce.** The Notes field is pre-filled with a numbered draft derived from your recorded interactions — edit it instead of starting from a blank box.
-- **Redact or drop network data.** Open **Network privacy** to see requests with likely secrets flagged (JWTs, API keys, emails, credentials — including in URL query params). Redaction is **opt-in**: tick a field to replace its secrets with `[REDACTED]`, or leave it to keep the value as-is (intentional values and false positives are never touched). You can also **drop** any request entirely — its body and headers are removed, but the report still records that the request happened.
-- **Choose what to include.** **Include in export** lists each artifact with its size and a running total, so you can drop large pieces (e.g. video) before the ZIP balloons.
+Configure **Options → Ring recording** to set retention windows and scope:
+
+- **Allowlist (default):** record only listed hostname patterns or currently pinned
+  hosts. An empty allowlist records nothing by itself; when you enable Always on
+  with an empty list, the focused host is automatically pinned so capture can begin.
+- **Blocklist:** record sites except listed blocked host patterns.
+- **All sites:** record all eligible sites.
+
+The blocked-domain list wins over scope and pins in every mode. Browser-internal
+and extension pages are never recorded. From the popup's tab list, pin/unpin hosts;
+a pin lets a host outside the allowlist be recorded, but does not bypass a
+blocked-domain rule. Pins last only for the current browser session and are cleared
+on browser restart. Turning Always on off clears its buffered data. Click **Export**
+to snapshot retained data and open it in the report review page.
+
+
+Starting any explicit session suspends **all** continuous capture, not only video.
+After the session stops or is discarded, the buffer resumes on the focused in-scope
+tab if still enabled. On a browser restart, retained ring event data may be restored
+from local OPFS, but video is memory-only and lost; restored data may remain
+exportable even though it cannot reattach to tabs whose IDs changed.
+
+Recovery is best effort, not a guarantee: session events, screenshots, DOM
+snapshots, replay, and session video are written to OPFS, while session state and
+recent extension errors use browser storage. Browser storage may be unavailable and
+writes may fail, so recovered session artifacts may be incomplete or unavailable.
+Continuous-capture video is memory-only and is lost on restart.
+
+
+![Continuous capture in the popup](../../assets/screenshots/popup.png)
+
+### Review and privacy
+
+Review is the point to decide what to share, not a guarantee that an artifact is
+safe. Capture-time handling omits credential-like headers and automatically
+redacts recognised sensitive values in supported URL/body fields. In **Network
+privacy**, the export review flags possible secrets and lets you opt in to redact
+selected detected fields; unchecked values remain. Removing a request removes the
+complete request, including URL and fields, from report artifacts—no dropped-request
+placeholder is exported. **Include in export** lets you omit available large
+artifacts such as video. Inspect the ZIP before sharing: DOM, screenshots, video,
+replay, metadata, and unrecognised sensitive values may expose page or user
+information.
 
 ### Replaying a request
 
-Each row in **Network privacy** also has **replay** and **curl** buttons:
+The report review's **Network privacy** rows offer replay and curl actions. Replay
+sends the edited request from the captured page using its live cookie jar
+(`credentials: "include"`). It can repeat state-changing operations and leave
+application/server traces; confirm the target and method/body before sending.
+Cross-origin requests remain subject to CORS. If page capture hooks are active,
+they may record the replay request and response; the replay UI does not directly
+add its response to the report. Curl output omits credential-like headers and may
+have truncated bodies, so treat it as a scaffold.
 
-- **Replay** resends the request against the still-open recorded page. Edit the method, URL, headers, or body, click **Send**, and the response renders with its status and duration — a `(was NNN)` badge flags a status that changed from the original capture, and the original response body is shown alongside for comparison. Because it sends from the live session, the real cookies authenticate it, so same-origin API calls work as-is; cross-origin targets are subject to the page's CORS policy and surface an inline error. Replay results are ephemeral — they are never written into the exported ZIP.
-- **curl** copies the request as a `curl` command (the same button also appears on every network row in the exported `report.html`). Since captured auth headers are stripped and long bodies truncated, it's a scaffold you complete, not a turnkey command.
+
 
 ### Exporting
 
-Add a title and notes, finish your review, then click **Export ZIP**.
+Review the title, description, notes, network decisions, and artifact selections,
+then click **Export ZIP**. By default, the filename is
+`browser-recording-{title-or-host}-{YYYYMMDD-HHmm}.zip`: title is preferred unless
+it is the default “Bug report,” then the captured host is used. Options can instead
+make the filename title-based. Standalone single screenshots and DOM snapshots
+download as `.png` or `.html`; other exports are ZIPs.
 
 ![Review and export](../../assets/screenshots/recorder.png)
 
-A self-contained `.zip` is saved locally — named `browser-recording-{title}-{date}.zip` — containing:
 
-- `report.html` — **start here.** A self-contained viewer (open in any browser, no server): every channel merged into one filterable timeline, an error-first **Problems** panel, and links to screenshots/DOM/session replay.
-- `report.md` — the same summary as Markdown, for humans and agents
-- `events.json` — all channels merged into one timestamp-sorted timeline; each entry carries a `seq`, an offset from session start, and a link to the interaction that likely caused it
-- `console.json` — console entries
-- `network.json` — network requests (entries marked `"dropped": true` were removed during review)
-- `interactions.json` — interaction events
-- `dom-snapshot-*.html` — HTML snapshots
-- `screenshot-*.png` — annotated PNG files
-- `video.webm` — tab recording (if enabled; bundled by default — uncheck **Video** under *Include in export* to download it on its own instead)
-- `metadata.json` — browser, OS, viewport, active extensions, uncaught exceptions
 
-No data leaves the device.
+Every ZIP includes `README.md`, `report.md`, `report.html`, and `metadata.json`.
+Other files depend on captured events and review selections:
+
+- `events.json` when there are timeline events; `console.json`, `network.json`, and
+  `interactions.json` when their selected channels have events. WebSocket and SSE
+  events are represented within `network.json`/the merged timeline, not separate
+  per-protocol files.
+- `performance.json` when performance data exists.
+- `screenshot-N.png` and `dom-snapshot-N.html` when selected screenshots and DOM
+  snapshots are available.
+- `video.webm` or `video.mp4` when video is available and included; format/browser
+  determine the container. You can instead download video separately.
+- `replay.html` and `replay.json` when experimental session replay data exists.
+- `_browser_recorder_self_diagnostics.json` when diagnostics are available.
+
+The extension does not upload captures. You control where exported files go and
+what you share.
+
+### Experimental features and limitations
+
+Session replay is off by default and can imperfectly render cross-origin
+styles/canvas. Its [input masking](#session-replay-input-masking) is best effort,
+not comprehensive redaction. Performance metrics are beta and metric fidelity is
+still being validated. The side-panel/Firefox sidebar surface is experimental.
+Request replay is a separate active network operation, not a safe preview.
+Capture-time redaction is limited to recognised patterns and supported network
+fields; review all artifacts before sharing.
 
 ### Keyboard shortcuts
 
@@ -130,22 +211,17 @@ No data leaves the device.
 |---|---|
 | Alt+Shift+R | Start session |
 | Alt+Shift+S | Stop session and open report |
-| Alt+Shift+C | Take screenshot (standalone or during a session) |
-| Alt+Shift+D | Capture DOM snapshot (standalone or during a session) |
+| Alt+Shift+C | Capture standalone screenshot or add one to a session |
+| Alt+Shift+D | Capture standalone DOM snapshot or add one to a session |
 
-Shortcuts can be changed at `chrome://extensions/shortcuts`.
+Change shortcuts at `chrome://extensions/shortcuts`.
 
-### Console capture: what's included and what isn't
+### Console capture
 
-The interceptor wraps `console.log/warn/error/info/debug` in the page's JS context. It only covers calls made **after a session is started**.
-
-**Not captured:**
-
-- Browser-native DevTools entries — `ERR_BLOCKED_BY_CLIENT`, preload warnings, deprecation notices injected by Chrome itself never pass through the JS `console` API.
-- Anything logged before the session starts — page-load output, framework initialisation, etc.
-
-**Captured:**
-
-- Any `console.*` call in page JS that fires after you click **Start session**.
-
-For pre-session or browser-native entries, attach Chrome DevTools and use the built-in console panel.
+Console capture is not limited to events after **Start session**: while Continuous
+capture is enabled and a page is in scope, page JavaScript console output can enter
+the ring buffer before a session starts. An explicit session captures enabled
+console calls during its active recording. Browser-native DevTools messages (such
+as `ERR_BLOCKED_BY_CLIENT`, preload warnings, or browser-injected deprecation
+notices) do not pass through the page's JavaScript console API and are not captured
+as console events. For those, use the browser's DevTools console.
